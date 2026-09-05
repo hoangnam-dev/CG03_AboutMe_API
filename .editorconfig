@@ -1,0 +1,24 @@
+root = true
+
+[*.cs]
+charset = utf-8
+end_of_line = crlf
+insert_final_newline = true
+indent_style = space
+indent_size = 4
+csharp_style_namespace_declarations = file_scoped:warning
+dotnet_sort_system_directives_first = true
+
+[**/Persistence/Migrations/*.cs]
+# EF Core regenerates migrations with block-scoped namespaces. Keep generated
+# migration files stable instead of producing IDE-only style errors.
+generated_code = true
+csharp_style_namespace_declarations = block_scoped:silent
+dotnet_diagnostic.IDE0161.severity = none
+
+[*.{json,yml,yaml,md}]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+indent_style = space
+indent_size = 2
