@@ -83,7 +83,7 @@ The dashboard repository currently performs four sequential count queries. This 
 
 ## 3. Specification Gaps and Required Decisions
 
-Sprint 0 is a hard gate. Record the approved answer for every `GATE-*` item in `docs/architecture/ADR-001-mvp-contract-decisions.md` before Sprint 1 begins.
+Sprint 0 is a hard gate. Record the approved answer for every `GATE-*` item in `docs/adr/0001-mvp-contract-decisions.md` before Sprint 1 begins.
 
 | Gate | Gap or conflict | Recommended decision used by this roadmap |
 | --- | --- | --- |
@@ -103,6 +103,8 @@ Sprint 0 is a hard gate. Record the approved answer for every `GATE-*` item in `
 | GATE-14 | Storage bucket visibility is not decided. | Use public buckets for `avatars` and `project-images`; use private buckets and short-lived signed URLs for `certificate-files` and `cv-files`. All writes remain server-only. |
 | GATE-15 | Delete behavior for referenced technologies/categories is unclear. | Return 409 when a category or technology is still referenced; do not cascade-delete professional history. |
 | GATE-16 | Contact notification provider is unspecified. | Persist messages first. Define `IContactNotifier` with a no-op MVP implementation; notification failure is logged and never rolls back the message. |
+| GATE-17 | Certificate credential ID visibility is required, but the schema has no visibility column. | Add `certificates.show_credential_id boolean not null default false` in a new migration. |
+| GATE-18 | Hero image is part of the MVP/schema, but only avatar upload has a route and arbitrary storage URLs are unsafe. | Add `POST /api/v1/admin/profile/hero-image`; keep media URLs read-only in JSON writes. |
 
 ## 4. Conflicts with the Attached Demand
 
@@ -283,12 +285,12 @@ Architecture, API, security, testing, and deployment decisions only; no producti
 
 ### Tasks
 
-- [ ] Create `docs/architecture/ADR-001-mvp-contract-decisions.md` with Context, Decision, Alternatives, Trade-offs, and Consequences for GATE-01 through GATE-16.
-- [ ] Create `docs/api/API_CONTRACT.md` containing every approved route, authorization rule, query parameter, request shape, response shape, status code, pagination rule, and ProblemDetails error code.
-- [ ] Create `docs/security/THREAT_MODEL.md` covering public reads, admin login/mutations, database access, Storage, contact abuse, and secret handling.
-- [ ] Create `docs/testing/TEST_STRATEGY.md` defining unit, PostgreSQL integration, API, Storage contract, security, and regression suites.
-- [ ] Record the current build/test baseline and the fact that `docs/BUG_LESSONS.md` has no applicable entries.
-- [ ] Review the approved documents in one architecture gate before any production code or migration is written.
+- [x] Create `docs/adr/0001-mvp-contract-decisions.md` with the accepted decision, considered options, and consequences for GATE-01 through GATE-18.
+- [x] Create `docs/api/API_CONTRACT.md` containing every approved route, authorization rule, query parameter, request shape, response shape, status code, pagination rule, and ProblemDetails behavior.
+- [x] Create `docs/security/THREAT_MODEL.md` covering public reads, admin login/mutations, database access, Storage, contact abuse, and secret handling.
+- [x] Create `docs/testing/TEST_STRATEGY.md` defining unit, PostgreSQL integration, API, Storage contract, security, and regression suites.
+- [x] Record the current build/test baseline and the fact that `docs/BUG_LESSONS.md` has no applicable entries in `docs/testing/BASELINE.md`.
+- [x] Review the approved documents in `docs/reviews/SPRINT_0_ARCHITECTURE_GATE.md` before any production code or migration is written.
 
 ### API / Events
 
@@ -323,7 +325,7 @@ Create the ADR, API contract, threat model, and test strategy named above.
 
 ### Definition of Done
 
-- All 16 gate decisions are approved.
+- All 18 gate decisions are approved.
 - Every MVP route has an exact contract or is explicitly excluded.
 - The attachment-only features are recorded as Phase 2, not MVP.
 - No production code changed.
@@ -365,6 +367,7 @@ Create one forward-only migration containing only approved Sprint 0 corrections:
 
 - `profiles.show_email boolean not null default false`
 - `profiles.show_phone boolean not null default false`
+- `certificates.show_credential_id boolean not null default false`
 - draft defaults for approved author-managed `is_published` columns
 - `certificates.issued_date` non-null only after a data precheck/backfill decision
 
@@ -439,6 +442,7 @@ Profile, social links, About, avatar storage, and their public/admin HTTP contra
 - [ ] Implement `ProfileService` and `AboutService`; validate names, title, short bio, counters, URLs, translation completeness on publish, and server-side visibility flags.
 - [ ] Implement thin public/admin controllers and exact OpenAPI annotations.
 - [ ] Implement avatar upload with the Sprint 1 storage boundary and compensation sequence.
+- [ ] Implement Hero image upload with the same validation and compensation sequence.
 - [ ] Add structured events for profile update, About update, and avatar replacement without logging content or file bytes.
 
 ### API / Events
@@ -447,6 +451,7 @@ Profile, social links, About, avatar storage, and their public/admin HTTP contra
 GET  /api/v1/portfolio/{slug}/profile?locale=en
 PUT  /api/v1/admin/profile
 POST /api/v1/admin/profile/avatar
+POST /api/v1/admin/profile/hero-image
 GET  /api/v1/portfolio/{slug}/about?locale=en
 PUT  /api/v1/admin/about
 ```

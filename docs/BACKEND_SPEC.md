@@ -38,7 +38,7 @@ Chat realtime, Redis, AI bot và group chat chưa triển khai trong phiên bả
 | Entity Framework Core 10 | ORM, migration và truy vấn PostgreSQL |
 | Npgsql | PostgreSQL provider cho EF Core |
 | PostgreSQL | Cơ sở dữ liệu quan hệ |
-| Supabase | PostgreSQL managed, Auth và Storage |
+| Supabase | PostgreSQL managed và Storage |
 | FluentValidation hoặc DataAnnotations | Validation DTO |
 | ProblemDetails | Chuẩn hóa error response |
 | Swagger/OpenAPI | Tài liệu và kiểm thử API |
@@ -401,11 +401,12 @@ Sử dụng RFC Problem Details:
 
 ## 8. Authentication và authorization
 
-### 8.1 Supabase Auth
+### 8.1 ASP.NET Core Identity
 
-- Frontend đăng nhập bằng Supabase Auth hoặc thông qua endpoint Backend tùy thiết kế.
-- Backend nhận JWT và xác minh signature, issuer, audience và thời gian hết hạn.
-- `sub`/user ID trong token được ánh xạ tới `users.id`.
+- Backend xác thực tài khoản Admin bằng ASP.NET Core Identity qua `POST /api/v1/auth/login`.
+- Backend phát JWT và xác minh signature, issuer, audience, role và thời gian hết hạn.
+- `sub` trong token là ID của `AspNetUsers`; role `Admin` do Identity quản lý phía server.
+- MVP không có public signup và không dùng Supabase Auth cho tài khoản Admin.
 - Quyền admin phải được đọc/kiểm tra phía server; không tin cờ do client gửi.
 
 ### 8.2 Policies
@@ -413,12 +414,11 @@ Sử dụng RFC Problem Details:
 ```text
 PublicReadPolicy
 AdminPolicy
-OwnerPolicy
 ```
 
 - Public endpoint chỉ trả bản ghi `is_published = true`.
 - Admin endpoint bắt buộc `AdminPolicy`.
-- Khi hỗ trợ nhiều portfolio, mọi mutation phải kiểm tra ownership.
+- MVP chỉ có một Portfolio và schema content không có owner FK. Nếu sau này hỗ trợ nhiều Portfolio, phải có migration và quyết định kiến trúc riêng trước khi thêm ownership policy.
 
 ### 8.3 Lưu token
 
@@ -432,24 +432,23 @@ OwnerPolicy
 
 | Bảng | Mục đích |
 | --- | --- |
-| `users` | Hồ sơ chủ portfolio |
-| `user_links` | GitHub, LinkedIn và liên kết khác |
+| `profiles`, `profile_translations`, `social_links` | Hồ sơ portfolio và liên kết |
+| `abouts`, `about_translations` | About Me |
 | `skill_categories` | Nhóm kỹ năng |
-| `skills` | Kỹ năng |
+| `technologies` | Kỹ năng/công nghệ |
 | `work_experiences` | Kinh nghiệm làm việc |
 | `projects` | Dự án |
 | `project_images` | Gallery dự án |
 | `project_technologies` | Công nghệ của dự án |
 | `certificates` | Chứng chỉ |
-| `cv_files` | Các phiên bản CV |
+| `resumes`, `resume_version_counters` | Các phiên bản CV và bộ đếm version |
 | `contact_messages` | Lời nhắn liên hệ |
-| `audit_logs` | Nhật ký thao tác admin |
+| `site_settings` | Cấu hình site dạng JSON |
 
 ### 9.2 Trường dùng chung cho content
 
 ```text
 id              uuid primary key
-user_id         uuid not null
 is_published    boolean not null default false
 display_order   integer not null default 0
 created_at      timestamptz not null
@@ -460,20 +459,22 @@ Không phải bảng nào cũng cần đủ các trường trên. `contact_messa
 
 ### 9.3 Index đề xuất
 
-- `(user_id, is_published, display_order)` cho danh sách public.
-- Unique `(user_id, slug)` cho project.
+- Partial index theo `is_published` và `display_order` cho danh sách public.
+- Unique `slug` toàn cục cho Profile và Project trong MVP một Portfolio.
 - `(status, created_at desc)` cho contact admin.
-- Partial unique index cho CV current theo `(user_id, language)` với điều kiện `is_current = true`.
+- Partial unique index cho CV current theo `language_code` với điều kiện `is_active = true`.
 - Index các foreign key như `project_images.project_id` và `skills.category_id`.
 
-### 9.4 RLS
+### 9.4 Database access và RLS
 
-- Public role chỉ được `SELECT` nội dung published.
-- Authenticated owner/admin chỉ được thao tác dữ liệu thuộc mình.
-- `contact_messages`: public chỉ được insert qua luồng được kiểm soát; không được select.
+- API dùng kết nối Npgsql server-side và là đường truy cập duy nhất tới bảng ứng dụng.
+- Supabase Data API không cấp quyền anonymous/authenticated cho schema ứng dụng của MVP.
+- Production dùng database role riêng cho API; migration dùng credential riêng và chạy qua một runner được kiểm soát.
+- JWT của ASP.NET Core Identity không được xem là Supabase Auth JWT và không ánh xạ giả sang `auth.uid()`.
 - Service-role key không bao giờ được đưa xuống Frontend.
+- Storage bucket policy chỉ cho phép public read ở bucket public đã duyệt; mọi write/delete và signed URL dùng Backend.
 
-Nếu Backend kết nối PostgreSQL trực tiếp bằng privileged connection, authorization trong API vẫn là bắt buộc. RLS không thay thế kiểm tra nghiệp vụ trong Application layer.
+Nếu bổ sung table RLS sau này, policy và production EF role phải được integration test cùng nhau trước deployment. Chi tiết quyết định nằm trong `docs/adr/0001-mvp-contract-decisions.md`.
 
 ## 10. Đặc tả chức năng Backend
 
@@ -486,6 +487,7 @@ Nếu Backend kết nối PostgreSQL trực tiếp bằng privileged connection,
 | GET | `/api/v1/portfolio/{slug}/profile` | Public | Hồ sơ công khai |
 | PUT | `/api/v1/admin/profile` | Admin | Cập nhật hồ sơ |
 | POST | `/api/v1/admin/profile/avatar` | Admin | Upload avatar |
+| POST | `/api/v1/admin/profile/hero-image` | Admin | Upload Hero image |
 
 #### Quy tắc nghiệp vụ
 
@@ -493,7 +495,7 @@ Nếu Backend kết nối PostgreSQL trực tiếp bằng privileged connection,
 - Chỉ trả email/phone khi cấu hình công khai.
 - `shortBio` có giới hạn độ dài.
 - Avatar phải đúng MIME và dung lượng cho phép.
-- Sau khi cập nhật, cache profile public phải được vô hiệu hóa.
+- MVP không dùng application cache. Nếu cache được phê duyệt sau này, update Profile phải vô hiệu hóa cache public tương ứng.
 
 ### BE-02 — About Me
 
@@ -505,7 +507,7 @@ Nếu Backend kết nối PostgreSQL trực tiếp bằng privileged connection,
 Quy tắc:
 
 - Không trả draft qua public API.
-- Nội dung phải được sanitize nếu cho phép Markdown/rich text.
+- MVP lưu và trả plain text. Nếu Markdown/rich text được phê duyệt sau này, nội dung phải được sanitize theo contract riêng.
 - `yearsOfExperience` không âm.
 - Có thể lưu About trong `users` hoặc bảng `profile_sections` nếu muốn versioning.
 
@@ -524,7 +526,7 @@ Quy tắc:
 
 Quy tắc:
 
-- Skill phải thuộc category của cùng owner.
+- Skill phải thuộc category tồn tại trong cùng Portfolio.
 - Không trùng tên trong cùng category.
 - Level thuộc enum `Primary`, `Experienced`, `Familiar`, `Learning`.
 - `icon` là object bắt buộc có dạng `{ "type": "lucide|image|text", "value": "..." }`; public DTO và admin DTO dùng cùng contract này.
@@ -659,10 +661,10 @@ Quy tắc:
 Yêu cầu:
 
 - Mọi endpoint `/admin` yêu cầu `AdminPolicy`.
-- CRUD phải kiểm tra ownership.
+- CRUD dựa trên `AdminPolicy` trong MVP một Portfolio; API không giả lập ownership khi schema chưa có owner FK.
 - Hỗ trợ pagination, search và filter trạng thái.
 - Hỗ trợ publish/unpublish và reorder.
-- Ghi audit log cho create, update, delete, publish và thao tác file quan trọng.
+- Ghi structured audit event qua Serilog cho create, update, delete, publish và thao tác file quan trọng; durable audit table nằm ngoài MVP.
 - Delete có thể là soft delete với resource cần khôi phục.
 - API không nhận `userId` hoặc `isAdmin` từ client để quyết định quyền.
 
@@ -873,7 +875,7 @@ Mock repository không được dùng làm bằng chứng rằng EF Core query h
 Validation chia thành ba mức:
 
 1. DTO validation: required, length, format và range.
-2. Application rule: slug trùng, ownership và trạng thái publish.
+2. Application rule: slug trùng, authorization/single-Portfolio scope và trạng thái publish.
 3. Entity/database invariant: khoảng ngày hợp lệ, unique/constraint và các invariant cần luôn đúng.
 
 Không chỉ dựa vào Frontend validation. Mọi input phải được kiểm tra lại ở Backend.
@@ -952,13 +954,19 @@ Không dùng `AllowAnyOrigin()` cùng credentials. Preview domain chỉ thêm kh
 
 ```text
 ConnectionStrings__PostgreSql
-Supabase__Url
-Supabase__AnonKey
-Supabase__ServiceRoleKey
-Supabase__JwtIssuer
-Supabase__JwtAudience
 Frontend__Origin
-Storage__MaxFileSize
+Jwt__Issuer
+Jwt__Audience
+Jwt__SigningKey
+Jwt__AccessTokenMinutes
+BootstrapAdmin__Enabled
+BootstrapAdmin__Email
+BootstrapAdmin__Password
+SupabaseStorage__Url
+SupabaseStorage__ServiceRoleKey
+Upload__MaxFileSize
+RateLimit__Login__PermitLimit
+RateLimit__Contact__PermitLimit
 ```
 
 Quy tắc:
@@ -1065,7 +1073,7 @@ Nếu dùng GitHub Container Registry:
 | Thành phần | Dịch vụ |
 | --- | --- |
 | PostgreSQL | Supabase Free |
-| Auth | Supabase Auth Free |
+| Auth | ASP.NET Core Identity trong API/PostgreSQL |
 | File Storage | Supabase Storage Free |
 | ASP.NET Core API | Render hoặc Koyeb free tier bằng Docker |
 | Container image | GitHub Container Registry |
@@ -1144,7 +1152,7 @@ Unit test tập trung vào:
 - validation;
 - branching;
 - mapping;
-- ownership decision;
+- authorization/single-Portfolio scope decision;
 - publish logic;
 - error mapping ở Application level.
 
@@ -1180,7 +1188,7 @@ Các test tối thiểu:
 
 1. Public API không trả draft.
 2. User không phải admin nhận 403 khi gọi admin API.
-3. Không sửa/xóa resource của owner khác.
+3. Non-admin nhận 403 và không thể sửa/xóa Portfolio Content.
 4. Không tạo experience có end date trước start date.
 5. Chỉ một CV current cho mỗi user/ngôn ngữ.
 6. Upload không hợp lệ không tạo database record.
@@ -1200,7 +1208,7 @@ Một chức năng Backend được xem là hoàn thành khi:
 - Không thêm Generic Repository.
 - Không thêm custom Unit of Work chỉ để wrap EF Core.
 - DTO validation và business rule đầy đủ.
-- Authentication, authorization và ownership được kiểm tra.
+- Authentication, authorization và giả định single-Portfolio được kiểm tra.
 - Migration, index và RLS policy đã được review khi có liên quan.
 - Transaction boundary được review cho multi-step write.
 - Có logging và ProblemDetails thống nhất.
