@@ -9,7 +9,9 @@ Database phục vụ portfolio song ngữ Anh (`en`)/Việt (`vi`), Admin CRUD, 
 - File nằm trên object storage; database chỉ lưu path/URL và metadata.
 - `created_at` của Resume là thời điểm upload bất biến. Timezone cấp version là `Asia/Ho_Chi_Minh`.
 - ASP.NET Core Identity quản lý tài khoản/role Admin và không được định nghĩa lại tại đây.
+- MVP chỉ có một Portfolio; content không có owner FK. Mở rộng multi-Portfolio cần migration/ADR riêng.
 - Public API chỉ trả nội dung đã publish và phải loại dữ liệu nhạy cảm của project `limited`.
+- Các hiệu chỉnh sau initial migration được quyết định tại `docs/adr/0001-mvp-contract-decisions.md`; không sửa migration đã tạo.
 
 ## 2. Danh sách bảng và ánh xạ FE
 
@@ -36,6 +38,8 @@ CREATE TABLE profiles (
     slug varchar(220) NOT NULL UNIQUE,
     full_name varchar(150) NOT NULL,
     email varchar(320), phone varchar(30),
+    show_email boolean NOT NULL DEFAULT false,
+    show_phone boolean NOT NULL DEFAULT false,
     avatar_url text, hero_image_url text,
     available_for_work boolean NOT NULL DEFAULT false,
     created_at timestamptz NOT NULL DEFAULT now(),
@@ -57,7 +61,7 @@ CREATE TABLE social_links (
     platform varchar(50) NOT NULL, label varchar(100), url text NOT NULL,
     icon_name varchar(100),
     display_order integer NOT NULL DEFAULT 0 CHECK (display_order >= 0),
-    is_published boolean NOT NULL DEFAULT true,
+    is_published boolean NOT NULL DEFAULT false,
     UNIQUE (profile_id, platform)
 );
 
@@ -71,7 +75,7 @@ CREATE TABLE abouts (
     show_project_count boolean NOT NULL DEFAULT true,
     show_technology_count boolean NOT NULL DEFAULT true,
     show_contact_section boolean NOT NULL DEFAULT true,
-    is_published boolean NOT NULL DEFAULT true,
+    is_published boolean NOT NULL DEFAULT false,
     created_at timestamptz NOT NULL DEFAULT now(),
     updated_at timestamptz NOT NULL DEFAULT now()
 );
@@ -86,7 +90,7 @@ CREATE TABLE about_translations (
 CREATE TABLE skill_categories (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     display_order integer NOT NULL DEFAULT 0 CHECK (display_order >= 0),
-    is_published boolean NOT NULL DEFAULT true,
+    is_published boolean NOT NULL DEFAULT false,
     created_at timestamptz NOT NULL DEFAULT now(),
     updated_at timestamptz NOT NULL DEFAULT now()
 );
@@ -107,7 +111,7 @@ CREATE TABLE technologies (
         CHECK (icon_type IN ('lucide', 'image', 'text')),
     icon_value varchar(500) NOT NULL,
     display_order integer NOT NULL DEFAULT 0 CHECK (display_order >= 0),
-    is_published boolean NOT NULL DEFAULT true,
+    is_published boolean NOT NULL DEFAULT false,
     created_at timestamptz NOT NULL DEFAULT now(),
     updated_at timestamptz NOT NULL DEFAULT now(),
     CONSTRAINT ck_technologies_icon_value CHECK (
@@ -136,7 +140,7 @@ CREATE TABLE work_experiences (
     employment_type varchar(30), company_url text,
     start_date date NOT NULL, end_date date,
     display_order integer NOT NULL DEFAULT 0 CHECK (display_order >= 0),
-    is_published boolean NOT NULL DEFAULT true,
+    is_published boolean NOT NULL DEFAULT false,
     created_at timestamptz NOT NULL DEFAULT now(),
     updated_at timestamptz NOT NULL DEFAULT now(),
     CHECK (end_date IS NULL OR end_date >= start_date)
@@ -176,7 +180,7 @@ CREATE TABLE projects (
     start_date date, end_date date,
     is_featured boolean NOT NULL DEFAULT false,
     display_order integer NOT NULL DEFAULT 0 CHECK (display_order >= 0),
-    is_published boolean NOT NULL DEFAULT true,
+    is_published boolean NOT NULL DEFAULT false,
     created_at timestamptz NOT NULL DEFAULT now(),
     updated_at timestamptz NOT NULL DEFAULT now(),
     CHECK (end_date IS NULL OR start_date IS NULL OR end_date >= start_date)
@@ -226,14 +230,15 @@ CREATE TABLE project_image_translations (
 CREATE TABLE certificates (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     issuer varchar(200) NOT NULL,
-    issued_date date, expiration_date date,
+    issued_date date NOT NULL, expiration_date date,
     credential_id varchar(200), credential_url text,
+    show_credential_id boolean NOT NULL DEFAULT false,
     file_url text, image_url text,
     display_order integer NOT NULL DEFAULT 0 CHECK (display_order >= 0),
-    is_published boolean NOT NULL DEFAULT true,
+    is_published boolean NOT NULL DEFAULT false,
     created_at timestamptz NOT NULL DEFAULT now(),
     updated_at timestamptz NOT NULL DEFAULT now(),
-    CHECK (expiration_date IS NULL OR issued_date IS NULL OR expiration_date >= issued_date)
+    CHECK (expiration_date IS NULL OR expiration_date >= issued_date)
 );
 
 CREATE TABLE certificate_translations (
@@ -267,7 +272,7 @@ CREATE TABLE resumes (
     version_year smallint NOT NULL CHECK (version_year BETWEEN 2000 AND 9999),
     version_sequence integer NOT NULL CHECK (version_sequence > 0),
     display_order integer NOT NULL DEFAULT 0 CHECK (display_order >= 0),
-    is_published boolean NOT NULL DEFAULT true,
+    is_published boolean NOT NULL DEFAULT false,
     is_active boolean NOT NULL DEFAULT false,
     created_at timestamptz NOT NULL DEFAULT now(),
     updated_at timestamptz NOT NULL DEFAULT now(),
@@ -401,8 +406,9 @@ DO UPDATE SET last_sequence = GREATEST(
 5. Backend kiểm tra MIME/dung lượng và tự tạo storage path; không nhận URL tùy ý.
 6. Slug được chuẩn hóa chữ thường và kiểm tra unique.
 7. Contact API có rate limit, honeypot, email validation và giới hạn độ dài.
-8. Nội dung Markdown phải sanitize trước khi render.
+8. MVP lưu/trả plain text. Nếu bổ sung Markdown/rich text sau này, phải chốt field, cú pháp và sanitizer trước khi triển khai.
 9. Cấp Resume version và đổi Resume current phải chạy trong transaction.
+10. Email/phone Profile và credential ID Certificate chỉ public khi visibility flag tương ứng là `true`.
 
 ## 7. Ngoài phạm vi MVP
 
