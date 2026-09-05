@@ -32,8 +32,16 @@ Before making non-trivial changes, inspect the relevant project documentation.
 
 Primary documents:
 
-- `BACKEND_SPEC.md`
-- `database.md`
+- `docs/BACKEND_SPEC.md`
+- `docs/database.md`
+
+Approved implementation contracts:
+
+- `docs/adr/0001-mvp-contract-decisions.md` for MVP architecture and scope decisions;
+- `docs/api/API_CONTRACT.md` before changing routes, DTOs, status codes, publication, or disclosure behavior;
+- `docs/security/THREAT_MODEL.md` before authentication, public data, upload, Contact, database-access, or secret-handling changes;
+- `docs/testing/TEST_STRATEGY.md` before adding or restructuring automated tests;
+- `CONTEXT.md` for canonical portfolio domain terms.
 
 `BACKEND_SPEC.md` defines:
 
