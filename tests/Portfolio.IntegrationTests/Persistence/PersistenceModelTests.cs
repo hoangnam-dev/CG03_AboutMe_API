@@ -83,6 +83,50 @@ public sealed class PersistenceModelTests
         Assert.Contains("icon_value", constraint.Sql, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void ProfileVisibilityDefaultsArePrivate()
+    {
+        using var context = CreateContext();
+        var profile = context.Model.FindEntityType(typeof(Profile))!;
+
+        Assert.Equal(false, profile.FindProperty(nameof(Profile.ShowEmail))?.GetDefaultValue());
+        Assert.Equal(false, profile.FindProperty(nameof(Profile.ShowPhone))?.GetDefaultValue());
+    }
+
+    [Fact]
+    public void CertificateCredentialVisibilityDefaultsToHiddenAndIssueDateIsRequired()
+    {
+        using var context = CreateContext();
+        var certificate = context.Model.FindEntityType(typeof(Certificate))!;
+
+        Assert.Equal(
+            false,
+            certificate.FindProperty(nameof(Certificate.ShowCredentialId))?.GetDefaultValue());
+        Assert.False(certificate.FindProperty(nameof(Certificate.IssuedDate))!.IsNullable);
+    }
+
+    [Theory]
+    [MemberData(nameof(PublishableEntityTypes))]
+    public void AuthorManagedContentDefaultsToDraft(Type entityType)
+    {
+        using var context = CreateContext();
+        var entity = context.Model.FindEntityType(entityType)!;
+
+        Assert.Equal(false, entity.FindProperty("IsPublished")?.GetDefaultValue());
+    }
+
+    public static TheoryData<Type> PublishableEntityTypes => new()
+    {
+        typeof(SocialLink),
+        typeof(About),
+        typeof(SkillCategory),
+        typeof(Technology),
+        typeof(WorkExperience),
+        typeof(Project),
+        typeof(Certificate),
+        typeof(ResumeFile),
+    };
+
     private static PortfolioDbContext CreateContext()
     {
         var options = new DbContextOptionsBuilder<PortfolioDbContext>()

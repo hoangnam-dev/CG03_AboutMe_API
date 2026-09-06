@@ -15,6 +15,8 @@ internal sealed class ProfileConfiguration : IEntityTypeConfiguration<Profile>
         builder.Property(x => x.FullName).HasColumnName("full_name").HasMaxLength(150).IsRequired();
         builder.Property(x => x.Email).HasColumnName("email").HasMaxLength(320);
         builder.Property(x => x.Phone).HasColumnName("phone").HasMaxLength(30);
+        builder.Property(x => x.ShowEmail).HasColumnName("show_email").HasDefaultValue(false);
+        builder.Property(x => x.ShowPhone).HasColumnName("show_phone").HasDefaultValue(false);
         builder.Property(x => x.AvatarUrl).HasColumnName("avatar_url");
         builder.Property(x => x.HeroImageUrl).HasColumnName("hero_image_url");
         builder.Property(x => x.AvailableForWork).HasColumnName("available_for_work").HasDefaultValue(false);
@@ -58,7 +60,7 @@ internal sealed class SocialLinkConfiguration : IEntityTypeConfiguration<SocialL
         builder.Property(x => x.Url).HasColumnName("url").IsRequired();
         builder.Property(x => x.IconName).HasColumnName("icon_name").HasMaxLength(100);
         builder.Property(x => x.DisplayOrder).HasColumnName("display_order").HasDefaultValue(0);
-        builder.Property(x => x.IsPublished).HasColumnName("is_published").HasDefaultValue(true);
+        builder.Property(x => x.IsPublished).HasColumnName("is_published").HasDefaultValue(false);
         builder.HasIndex(x => new { x.ProfileId, x.Platform }).IsUnique();
         builder.HasIndex(x => x.DisplayOrder).HasDatabaseName("idx_social_links_public_order").HasFilter("is_published");
         builder.HasOne(x => x.Profile).WithMany(x => x.SocialLinks).HasForeignKey(x => x.ProfileId).OnDelete(DeleteBehavior.Cascade);
@@ -87,7 +89,7 @@ internal sealed class AboutConfiguration : IEntityTypeConfiguration<About>
         builder.Property(x => x.ShowProjectCount).HasColumnName("show_project_count").HasDefaultValue(true);
         builder.Property(x => x.ShowTechnologyCount).HasColumnName("show_technology_count").HasDefaultValue(true);
         builder.Property(x => x.ShowContactSection).HasColumnName("show_contact_section").HasDefaultValue(true);
-        builder.Property(x => x.IsPublished).HasColumnName("is_published").HasDefaultValue(true);
+        builder.Property(x => x.IsPublished).HasColumnName("is_published").HasDefaultValue(false);
         builder.Property(x => x.CreatedAt).HasColumnName("created_at").HasDefaultValueSql("now()");
         builder.Property(x => x.UpdatedAt).HasColumnName("updated_at").HasDefaultValueSql("now()");
         builder.HasIndex(x => x.ProfileId).IsUnique();

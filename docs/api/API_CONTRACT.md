@@ -16,6 +16,35 @@ This document freezes the HTTP contract approved by [ADR 0001](../adr/0001-mvp-c
 - Dates: `YYYY-MM-DD`
 - Timestamps: ISO 8601 UTC timestamps
 
+### Operational health endpoints
+
+Health endpoints are anonymous operational routes outside `/api/v1`:
+
+- `GET /health` is dependency-free liveness and returns 200 while the process can serve HTTP.
+- `GET /health/ready` checks all required dependencies and returns 200 when healthy or 503 otherwise.
+- `GET /health/supabase` checks PostgreSQL and Supabase Storage and returns 200 only when both are healthy, or 503 otherwise.
+
+The Supabase response contains only aggregate/component status and duration:
+
+```json
+{
+  "status": "healthy",
+  "totalDurationMs": 42.5,
+  "checks": {
+    "postgresql": {
+      "status": "healthy",
+      "durationMs": 31.2
+    },
+    "supabase-storage": {
+      "status": "healthy",
+      "durationMs": 11.3
+    }
+  }
+}
+```
+
+Health responses never include provider messages, exception details, URLs, connection strings, credentials, bucket contents, or object keys.
+
 ### Success envelope
 
 Single resource:

@@ -14,7 +14,7 @@ internal sealed class SkillCategoryConfiguration : IEntityTypeConfiguration<Skil
         builder.HasKey(x => x.Id);
         builder.Property(x => x.Id).HasColumnName("id").HasDefaultValueSql("gen_random_uuid()");
         builder.Property(x => x.DisplayOrder).HasColumnName("display_order").HasDefaultValue(0);
-        builder.Property(x => x.IsPublished).HasColumnName("is_published").HasDefaultValue(true);
+        builder.Property(x => x.IsPublished).HasColumnName("is_published").HasDefaultValue(false);
         builder.Property(x => x.CreatedAt).HasColumnName("created_at").HasDefaultValueSql("now()");
         builder.Property(x => x.UpdatedAt).HasColumnName("updated_at").HasDefaultValueSql("now()");
         builder.HasIndex(x => x.DisplayOrder).HasDatabaseName("idx_skill_categories_public_order").HasFilter("is_published");
@@ -64,7 +64,7 @@ internal sealed class TechnologyConfiguration : IEntityTypeConfiguration<Technol
             value => Enum.Parse<SkillIconType>(value, true)).HasDefaultValue(SkillIconType.Text);
         builder.Property(x => x.IconValue).HasColumnName("icon_value").HasMaxLength(500).IsRequired();
         builder.Property(x => x.DisplayOrder).HasColumnName("display_order").HasDefaultValue(0);
-        builder.Property(x => x.IsPublished).HasColumnName("is_published").HasDefaultValue(true);
+        builder.Property(x => x.IsPublished).HasColumnName("is_published").HasDefaultValue(false);
         builder.Property(x => x.CreatedAt).HasColumnName("created_at").HasDefaultValueSql("now()");
         builder.Property(x => x.UpdatedAt).HasColumnName("updated_at").HasDefaultValueSql("now()");
         builder.HasIndex(x => new { x.CategoryId, x.DisplayOrder }).HasDatabaseName("idx_technologies_public_category_order").HasFilter("is_published");
