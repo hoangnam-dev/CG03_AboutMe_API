@@ -48,7 +48,7 @@ internal sealed class ResumeConfiguration : IEntityTypeConfiguration<ResumeFile>
         builder.Property(x => x.VersionYear).HasColumnName("version_year");
         builder.Property(x => x.VersionSequence).HasColumnName("version_sequence");
         builder.Property(x => x.DisplayOrder).HasColumnName("display_order").HasDefaultValue(0);
-        builder.Property(x => x.IsPublished).HasColumnName("is_published").HasDefaultValue(true);
+        builder.Property(x => x.IsPublished).HasColumnName("is_published").HasDefaultValue(false);
         builder.Property(x => x.IsActive).HasColumnName("is_active").HasDefaultValue(false);
         builder.Property(x => x.CreatedAt).HasColumnName("created_at").HasDefaultValueSql("now()");
         builder.Property(x => x.UpdatedAt).HasColumnName("updated_at").HasDefaultValueSql("now()");

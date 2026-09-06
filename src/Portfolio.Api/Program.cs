@@ -1,6 +1,7 @@
 using System.Globalization;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Portfolio.Api.Extensions;
+using Portfolio.Api.Health;
 using Portfolio.Application;
 using Portfolio.Infrastructure;
 using Portfolio.Infrastructure.Authentication;
@@ -50,6 +51,11 @@ app.MapHealthChecks("/health", new HealthCheckOptions
 app.MapHealthChecks("/health/ready", new HealthCheckOptions
 {
     Predicate = registration => registration.Tags.Contains("ready"),
+});
+app.MapHealthChecks("/health/supabase", new HealthCheckOptions
+{
+    Predicate = registration => registration.Tags.Contains("supabase"),
+    ResponseWriter = HealthCheckResponseWriter.WriteAsync,
 });
 app.MapControllers();
 

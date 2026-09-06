@@ -4,12 +4,14 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using Portfolio.Application.Common.Authentication;
+using Portfolio.Application.Common.Storage;
 using Portfolio.Application.Dashboard;
 using Portfolio.Infrastructure.Authentication;
 using Portfolio.Infrastructure.Availability;
 using Portfolio.Infrastructure.Configuration;
 using Portfolio.Infrastructure.Persistence;
 using Portfolio.Infrastructure.Persistence.Repositories;
+using Portfolio.Infrastructure.Storage;
 
 namespace Portfolio.Infrastructure;
 
@@ -25,6 +27,11 @@ public static class DependencyInjection
         var bootstrapEnabled = configuration.GetValue<bool>(
             $"{BootstrapAdminOptions.SectionName}:Enabled");
         var databaseRequired = !allowUnconfiguredDependencies || bootstrapEnabled;
+        var storageUrl = configuration[$"{SupabaseStorageOptions.SectionName}:Url"];
+        var storageServiceKey = configuration[$"{SupabaseStorageOptions.SectionName}:ServiceRoleKey"];
+        var storageConfigured =
+            !string.IsNullOrWhiteSpace(storageUrl) ||
+            !string.IsNullOrWhiteSpace(storageServiceKey);
 
         services.AddOptions<DatabaseOptions>()
             .Configure(options => options.ConnectionString = connectionString);
@@ -52,6 +59,24 @@ public static class DependencyInjection
         services.AddOptions<BootstrapAdminOptions>()
             .Bind(configuration.GetSection(BootstrapAdminOptions.SectionName))
             .ValidateOnStart();
+
+        services.AddOptions<SupabaseStorageOptions>()
+            .Bind(configuration.GetSection(SupabaseStorageOptions.SectionName));
+        if (!allowUnconfiguredDependencies || storageConfigured)
+        {
+            services.AddSingleton<
+                IValidateOptions<SupabaseStorageOptions>,
+                SupabaseStorageOptionsValidator>();
+            services.AddOptions<SupabaseStorageOptions>().ValidateOnStart();
+            services.AddHttpClient<SupabaseFileStorage>(ConfigureStorageClient);
+            services.AddHttpClient<SupabaseStorageHealthCheck>(ConfigureStorageClient);
+            services.AddScoped<IFileStorage>(provider =>
+                provider.GetRequiredService<SupabaseFileStorage>());
+        }
+        else
+        {
+            services.AddScoped<IFileStorage, StorageUnavailableFileStorage>();
+        }
 
         if (!string.IsNullOrWhiteSpace(connectionString))
         {
@@ -87,5 +112,14 @@ public static class DependencyInjection
 
         services.AddSingleton(TimeProvider.System);
         return services;
+    }
+
+    private static void ConfigureStorageClient(
+        IServiceProvider provider,
+        HttpClient client)
+    {
+        var storage = provider.GetRequiredService<IOptions<SupabaseStorageOptions>>().Value;
+        client.BaseAddress = storage.Url;
+        client.Timeout = TimeSpan.FromSeconds(storage.RequestTimeoutSeconds);
     }
 }

@@ -170,7 +170,7 @@ namespace Portfolio.Infrastructure.Persistence.Migrations
                     b.Property<bool>("IsPublished")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("boolean")
-                        .HasDefaultValue(true)
+                        .HasDefaultValue(false)
                         .HasColumnName("is_published");
 
                     b.Property<Guid>("ProfileId")
@@ -312,10 +312,10 @@ namespace Portfolio.Infrastructure.Persistence.Migrations
                     b.Property<bool>("IsPublished")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("boolean")
-                        .HasDefaultValue(true)
+                        .HasDefaultValue(false)
                         .HasColumnName("is_published");
 
-                    b.Property<DateOnly?>("IssuedDate")
+                    b.Property<DateOnly>("IssuedDate")
                         .HasColumnType("date")
                         .HasColumnName("issued_date");
 
@@ -324,6 +324,12 @@ namespace Portfolio.Infrastructure.Persistence.Migrations
                         .HasMaxLength(200)
                         .HasColumnType("character varying(200)")
                         .HasColumnName("issuer");
+
+                    b.Property<bool>("ShowCredentialId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false)
+                        .HasColumnName("show_credential_id");
 
                     b.Property<DateTimeOffset>("UpdatedAt")
                         .ValueGeneratedOnAdd()
@@ -340,7 +346,7 @@ namespace Portfolio.Infrastructure.Persistence.Migrations
 
                     b.ToTable("certificates", null, t =>
                         {
-                            t.HasCheckConstraint("ck_certificates_dates", "expiration_date IS NULL OR issued_date IS NULL OR expiration_date >= issued_date");
+                            t.HasCheckConstraint("ck_certificates_dates", "expiration_date IS NULL OR expiration_date >= issued_date");
 
                             t.HasCheckConstraint("ck_certificates_display_order", "display_order >= 0");
                         });
@@ -620,6 +626,18 @@ namespace Portfolio.Infrastructure.Persistence.Migrations
                         .HasColumnType("character varying(30)")
                         .HasColumnName("phone");
 
+                    b.Property<bool>("ShowEmail")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false)
+                        .HasColumnName("show_email");
+
+                    b.Property<bool>("ShowPhone")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false)
+                        .HasColumnName("show_phone");
+
                     b.Property<string>("Slug")
                         .IsRequired()
                         .HasMaxLength(220)
@@ -737,7 +755,7 @@ namespace Portfolio.Infrastructure.Persistence.Migrations
                     b.Property<bool>("IsPublished")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("boolean")
-                        .HasDefaultValue(true)
+                        .HasDefaultValue(false)
                         .HasColumnName("is_published");
 
                     b.Property<string>("Kind")
@@ -1029,7 +1047,7 @@ namespace Portfolio.Infrastructure.Persistence.Migrations
                     b.Property<bool>("IsPublished")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("boolean")
-                        .HasDefaultValue(true)
+                        .HasDefaultValue(false)
                         .HasColumnName("is_published");
 
                     b.Property<string>("LanguageCode")
@@ -1195,7 +1213,7 @@ namespace Portfolio.Infrastructure.Persistence.Migrations
                     b.Property<bool>("IsPublished")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("boolean")
-                        .HasDefaultValue(true)
+                        .HasDefaultValue(false)
                         .HasColumnName("is_published");
 
                     b.Property<DateTimeOffset>("UpdatedAt")
@@ -1263,7 +1281,7 @@ namespace Portfolio.Infrastructure.Persistence.Migrations
                     b.Property<bool>("IsPublished")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("boolean")
-                        .HasDefaultValue(true)
+                        .HasDefaultValue(false)
                         .HasColumnName("is_published");
 
                     b.Property<string>("Label")
@@ -1342,7 +1360,7 @@ namespace Portfolio.Infrastructure.Persistence.Migrations
                     b.Property<bool>("IsPublished")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("boolean")
-                        .HasDefaultValue(true)
+                        .HasDefaultValue(false)
                         .HasColumnName("is_published");
 
                     b.Property<string>("SkillLevel")
@@ -1452,7 +1470,7 @@ namespace Portfolio.Infrastructure.Persistence.Migrations
                     b.Property<bool>("IsPublished")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("boolean")
-                        .HasDefaultValue(true)
+                        .HasDefaultValue(false)
                         .HasColumnName("is_published");
 
                     b.Property<DateOnly>("StartDate")

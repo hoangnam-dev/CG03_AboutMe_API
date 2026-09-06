@@ -4,10 +4,11 @@ public sealed class Certificate
 {
     public Guid Id { get; set; }
     public string Issuer { get; set; } = string.Empty;
-    public DateOnly? IssuedDate { get; set; }
+    public DateOnly IssuedDate { get; set; }
     public DateOnly? ExpirationDate { get; set; }
     public string? CredentialId { get; set; }
     public string? CredentialUrl { get; set; }
+    public bool ShowCredentialId { get; set; }
     public string? FileUrl { get; set; }
     public string? ImageUrl { get; set; }
     public int DisplayOrder { get; set; }
