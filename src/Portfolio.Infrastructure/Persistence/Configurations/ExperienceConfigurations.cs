@@ -23,7 +23,7 @@ internal sealed class WorkExperienceConfiguration : IEntityTypeConfiguration<Wor
         builder.Property(x => x.StartDate).HasColumnName("start_date");
         builder.Property(x => x.EndDate).HasColumnName("end_date");
         builder.Property(x => x.DisplayOrder).HasColumnName("display_order").HasDefaultValue(0);
-        builder.Property(x => x.IsPublished).HasColumnName("is_published").HasDefaultValue(true);
+        builder.Property(x => x.IsPublished).HasColumnName("is_published").HasDefaultValue(false);
         builder.Property(x => x.CreatedAt).HasColumnName("created_at").HasDefaultValueSql("now()");
         builder.Property(x => x.UpdatedAt).HasColumnName("updated_at").HasDefaultValueSql("now()");
         builder.HasIndex(x => new { x.DisplayOrder, x.StartDate })

@@ -7,6 +7,8 @@ public sealed class Profile
     public string FullName { get; set; } = string.Empty;
     public string? Email { get; set; }
     public string? Phone { get; set; }
+    public bool ShowEmail { get; set; }
+    public bool ShowPhone { get; set; }
     public string? AvatarUrl { get; set; }
     public string? HeroImageUrl { get; set; }
     public bool AvailableForWork { get; set; }

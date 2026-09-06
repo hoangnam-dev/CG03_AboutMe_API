@@ -11,6 +11,7 @@ using Portfolio.Api.Configuration;
 using Portfolio.Api.Errors;
 using Portfolio.Infrastructure.Authentication;
 using Portfolio.Infrastructure.Persistence;
+using Portfolio.Infrastructure.Storage;
 
 namespace Portfolio.Api.Extensions;
 
@@ -24,6 +25,11 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IValidateOptions<FrontendOptions>, FrontendOptionsValidator>();
         services.AddOptions<FrontendOptions>()
             .Bind(configuration.GetSection(FrontendOptions.SectionName))
+            .ValidateOnStart();
+
+        services.AddSingleton<IValidateOptions<UploadOptions>, UploadOptionsValidator>();
+        services.AddOptions<UploadOptions>()
+            .Bind(configuration.GetSection(UploadOptions.SectionName))
             .ValidateOnStart();
 
         services.AddControllers()
@@ -120,13 +126,32 @@ public static class ServiceCollectionExtensions
                 "postgresql",
                 () => Microsoft.Extensions.Diagnostics.HealthChecks.HealthCheckResult.Unhealthy(
                     "PostgreSQL is not configured."),
-                tags: ["ready"]);
+                tags: ["ready", "supabase"]);
         }
         else
         {
             healthChecks.AddDbContextCheck<PortfolioDbContext>(
                 "postgresql",
-                tags: ["ready"]);
+                tags: ["ready", "supabase"]);
+        }
+
+        var storageUrl = configuration[$"{SupabaseStorageOptions.SectionName}:Url"];
+        var storageServiceKey =
+            configuration[$"{SupabaseStorageOptions.SectionName}:ServiceRoleKey"];
+        if (!string.IsNullOrWhiteSpace(storageUrl) &&
+            !string.IsNullOrWhiteSpace(storageServiceKey))
+        {
+            healthChecks.AddCheck<SupabaseStorageHealthCheck>(
+                "supabase-storage",
+                tags: ["ready", "supabase"]);
+        }
+        else
+        {
+            healthChecks.AddCheck(
+                "supabase-storage",
+                () => Microsoft.Extensions.Diagnostics.HealthChecks.HealthCheckResult.Unhealthy(
+                    "Supabase Storage is not configured."),
+                tags: ["ready", "supabase"]);
         }
         services.AddEndpointsApiExplorer();
         services.AddSwaggerGen();
