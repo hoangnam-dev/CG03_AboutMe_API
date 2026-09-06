@@ -79,6 +79,9 @@ public sealed class StorageReplacementTests
         public List<string> Events { get; } = [];
         public bool FailDelete { get; init; }
 
+        public Uri GetPublicReadUrl(string bucket, string objectKey) =>
+            new($"https://storage.example/{bucket}/{objectKey}");
+
         public Task<StorageObject> UploadAsync(
             StorageUpload upload,
             CancellationToken cancellationToken)

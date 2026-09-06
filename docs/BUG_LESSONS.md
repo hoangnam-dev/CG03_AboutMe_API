@@ -19,7 +19,55 @@ Its purpose is regression prevention, not incident narration.
 
 | ID | Status | Area | Feature | Title | Tags |
 | --- | --- | --- | --- | --- | --- |
-| _No entries yet_ |  |  |  |  |  |
+| BUG-2026-001 | Resolved | Testing | Shared | WebApplicationFactory inherited developer service configuration | `webapplicationfactory`, `configuration`, `test-isolation`, `secrets` |
+
+---
+
+## BUG-2026-001 — WebApplicationFactory inherited developer service configuration
+
+- **Status:** Resolved
+- **Area:** Testing
+- **Feature:** Shared
+- **First observed:** 2026-09-06
+- **Last updated:** 2026-09-06
+- **Tags:** `webapplicationfactory`, `configuration`, `test-isolation`, `secrets`
+
+### Symptom
+
+The database-optional API test reported readiness and contacted locally configured Supabase services instead of exercising unavailable-service registrations.
+
+### Root cause
+
+`ConfigureAppConfiguration` test values were applied too late to control configuration branches evaluated while the minimal-host application registered services. Developer configuration had already selected the real database and Storage registrations.
+
+### Why it happened
+
+The test assumed an in-memory configuration provider added through `ConfigureAppConfiguration` governed service-registration decisions in `Program.cs`.
+
+### Correct fix
+
+Set database and Storage configuration through `IWebHostBuilder.UseSetting` in each API factory so the overrides are visible before application services are registered.
+
+### Prevention rule
+
+API factories must override external-service selection settings with `UseSetting` before startup; never rely only on late app-configuration providers to isolate developer secrets and live services.
+
+### Regression test
+
+`tests/Portfolio.IntegrationTests/Api/ApiFoundationTests.cs` — `DatabaseOptionalStartupTests.ApiStartsWithoutDatabaseConfiguration`
+
+### Verification
+
+- `dotnet test tests/Portfolio.IntegrationTests/Portfolio.IntegrationTests.csproj --configuration Release --no-restore --filter FullyQualifiedName~DatabaseOptionalStartupTests` — passed.
+- Non-persistence integration suite — 45 passed, 0 failed.
+
+### Relevant files
+
+- `tests/Portfolio.IntegrationTests/Api/ApiFoundationTests.cs`
+
+### Related lessons
+
+- None.
 
 ---
 

@@ -114,6 +114,11 @@ public sealed class PortfolioApiFactory : WebApplicationFactory<Program>
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         builder.UseEnvironment("Development");
+        builder.UseSetting(
+            "ConnectionStrings:PostgreSql",
+            "Host=localhost;Database=portfolio_api_tests;Username=test;Password=test");
+        builder.UseSetting("SupabaseStorage:Url", string.Empty);
+        builder.UseSetting("SupabaseStorage:ServiceRoleKey", string.Empty);
         builder.ConfigureLogging(logging => logging.ClearProviders());
         builder.ConfigureAppConfiguration((_, configuration) =>
         {
@@ -138,6 +143,9 @@ public sealed class DatabaseOptionalApiFactory : WebApplicationFactory<Program>
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         builder.UseEnvironment("Development");
+        builder.UseSetting("ConnectionStrings:PostgreSql", string.Empty);
+        builder.UseSetting("SupabaseStorage:Url", string.Empty);
+        builder.UseSetting("SupabaseStorage:ServiceRoleKey", string.Empty);
         builder.ConfigureLogging(logging => logging.ClearProviders());
         builder.ConfigureAppConfiguration((_, configuration) =>
         {

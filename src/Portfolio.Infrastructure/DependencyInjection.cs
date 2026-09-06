@@ -4,8 +4,10 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using Portfolio.Application.Common.Authentication;
+using Portfolio.Application.About;
 using Portfolio.Application.Common.Storage;
 using Portfolio.Application.Dashboard;
+using Portfolio.Application.Profiles;
 using Portfolio.Infrastructure.Authentication;
 using Portfolio.Infrastructure.Availability;
 using Portfolio.Infrastructure.Configuration;
@@ -102,12 +104,16 @@ public static class DependencyInjection
 
             services.AddScoped<IIdentityAuthenticator, IdentityAuthenticator>();
             services.AddScoped<IDashboardRepository, DashboardRepository>();
+            services.AddScoped<IProfileRepository, ProfileRepository>();
+            services.AddScoped<IAboutRepository, AboutRepository>();
             services.AddScoped<AdminBootstrapper>();
         }
         else
         {
             services.AddScoped<IIdentityAuthenticator, DatabaseUnavailableIdentityAuthenticator>();
             services.AddScoped<IDashboardRepository, DatabaseUnavailableDashboardRepository>();
+            services.AddScoped<IProfileRepository, DatabaseUnavailableProfileRepository>();
+            services.AddScoped<IAboutRepository, DatabaseUnavailableAboutRepository>();
         }
 
         services.AddSingleton(TimeProvider.System);

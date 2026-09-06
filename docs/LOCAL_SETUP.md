@@ -121,6 +121,8 @@ SupabaseStorage__Buckets__ProjectImages=project-images
 SupabaseStorage__Buckets__CertificateFiles=certificate-files
 SupabaseStorage__Buckets__CvFiles=cv-files
 Upload__MaxFileSize=10485760
+Upload__MaxHeroImageWidth=8192
+Upload__MaxHeroImageHeight=8192
 
 BootstrapAdmin__Enabled=false
 BootstrapAdmin__Email=

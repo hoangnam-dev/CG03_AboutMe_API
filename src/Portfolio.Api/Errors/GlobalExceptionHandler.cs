@@ -35,6 +35,10 @@ public sealed class GlobalExceptionHandler(
                 StatusCodes.Status409Conflict,
                 "Conflict",
                 exception.Message),
+            PayloadTooLargeException => (
+                StatusCodes.Status413PayloadTooLarge,
+                "Payload too large",
+                exception.Message),
             ServiceUnavailableException => (
                 StatusCodes.Status503ServiceUnavailable,
                 "Service unavailable",

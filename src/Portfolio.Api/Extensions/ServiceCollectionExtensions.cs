@@ -12,6 +12,7 @@ using Portfolio.Api.Errors;
 using Portfolio.Infrastructure.Authentication;
 using Portfolio.Infrastructure.Persistence;
 using Portfolio.Infrastructure.Storage;
+using Portfolio.Application.Profiles;
 
 namespace Portfolio.Api.Extensions;
 
@@ -31,6 +32,17 @@ public static class ServiceCollectionExtensions
         services.AddOptions<UploadOptions>()
             .Bind(configuration.GetSection(UploadOptions.SectionName))
             .ValidateOnStart();
+        services.AddSingleton(provider =>
+        {
+            var uploads = provider.GetRequiredService<IOptions<UploadOptions>>().Value;
+            var bucket = configuration[$"{SupabaseStorageOptions.SectionName}:Buckets:Avatars"]
+                ?? "avatars";
+            return new ProfileMediaSettings(
+                bucket,
+                uploads.MaxFileSize,
+                uploads.MaxHeroImageWidth,
+                uploads.MaxHeroImageHeight);
+        });
 
         services.AddControllers()
             .AddJsonOptions(options =>

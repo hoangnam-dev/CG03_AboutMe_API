@@ -14,6 +14,14 @@ public sealed class SupabaseFileStorage(
 {
     private readonly SupabaseStorageOptions _options = options.Value;
 
+    public Uri GetPublicReadUrl(string bucket, string objectKey)
+    {
+        ValidateIdentity(bucket, objectKey);
+        return new Uri(
+            _options.Url!,
+            $"storage/v1/object/public/{BuildObjectPath(bucket, objectKey)}");
+    }
+
     public async Task<StorageObject> UploadAsync(
         StorageUpload upload,
         CancellationToken cancellationToken)
@@ -166,12 +174,7 @@ public sealed class SupabaseFileStorage(
 
         if (response.StatusCode == HttpStatusCode.RequestEntityTooLarge)
         {
-            throw new ValidationException(
-                "File validation failed.",
-                new Dictionary<string, string[]>
-                {
-                    ["file"] = ["The storage provider rejected the file size."],
-                });
+            throw new PayloadTooLargeException("The storage provider rejected the file size.");
         }
 
         throw Unavailable();
