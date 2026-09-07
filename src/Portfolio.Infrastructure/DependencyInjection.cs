@@ -8,6 +8,7 @@ using Portfolio.Application.Authentication;
 using Portfolio.Application.Common.Authentication;
 using Portfolio.Application.Common.Storage;
 using Portfolio.Application.Dashboard;
+using Portfolio.Application.Experiences;
 using Portfolio.Application.Profiles;
 using Portfolio.Application.Skills;
 using Portfolio.Infrastructure.Authentication;
@@ -123,6 +124,7 @@ public static class DependencyInjection
             services.AddScoped<IDashboardRepository, DashboardRepository>();
             services.AddScoped<IProfileRepository, ProfileRepository>();
             services.AddScoped<IAboutRepository, AboutRepository>();
+            services.AddScoped<IExperienceRepository, ExperienceRepository>();
             services.AddScoped<ISkillRepository, SkillRepository>();
             services.AddScoped<AdminBootstrapper>();
         }
@@ -134,6 +136,7 @@ public static class DependencyInjection
             services.AddScoped<IDashboardRepository, DatabaseUnavailableDashboardRepository>();
             services.AddScoped<IProfileRepository, DatabaseUnavailableProfileRepository>();
             services.AddScoped<IAboutRepository, DatabaseUnavailableAboutRepository>();
+            services.AddScoped<IExperienceRepository, DatabaseUnavailableExperienceRepository>();
             services.AddScoped<ISkillRepository, DatabaseUnavailableSkillRepository>();
         }
 

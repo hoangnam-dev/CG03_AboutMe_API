@@ -344,16 +344,16 @@ Cross-feature locale, validation, file-storage, configuration, migration, and Po
 
 ### Tasks
 
-- [ ] Add failing tests for `SupportedLocales.Normalize` accepting `en`/`vi`, defaulting an omitted locale to `en`, and rejecting every other value.
-- [ ] Add `SupportedLocales`, slug normalization, publish-translation validation, and typed validation errors in `Portfolio.Application/Common`.
-- [ ] Add failing tests for zero-byte, oversized, extension/MIME mismatch, unsafe filename metadata, and allowed image/PDF signatures.
-- [ ] Implement reusable file validation without trusting `IFormFile.FileName` or caller-provided storage paths.
-- [ ] Define `IFileStorage`, `StorageUpload`, and `StorageObject`; add validated `SupabaseStorageOptions` and per-purpose bucket options.
-- [ ] Implement `SupabaseFileStorage` as a typed `HttpClient` adapter with bounded timeout and safe error translation; never manipulate the Supabase `storage` schema directly.
-- [ ] Add upload-compensation tests proving a newly uploaded object is deleted after persistence failure and an old object remains until the new state commits.
-- [ ] Add `PostgreSqlFixture` using `Testcontainers.PostgreSql`, apply migrations once per test collection, reset portfolio data between tests, and preserve Identity schema.
-- [ ] Convert model-only persistence checks into PostgreSQL constraint tests while retaining fast metadata assertions where valuable.
-- [ ] Register new abstractions centrally in Application/Infrastructure DI and validate all configuration at startup outside Development.
+- [x] Add failing tests for `SupportedLocales.Normalize` accepting `en`/`vi`, defaulting an omitted locale to `en`, and rejecting every other value.
+- [x] Add `SupportedLocales`, slug normalization, publish-translation validation, and typed validation errors in `Portfolio.Application/Common`.
+- [x] Add failing tests for zero-byte, oversized, extension/MIME mismatch, unsafe filename metadata, and allowed image/PDF signatures.
+- [x] Implement reusable file validation without trusting `IFormFile.FileName` or caller-provided storage paths.
+- [x] Define `IFileStorage`, `StorageUpload`, and `StorageObject`; add validated `SupabaseStorageOptions` and per-purpose bucket options.
+- [x] Implement `SupabaseFileStorage` as a typed `HttpClient` adapter with bounded timeout and safe error translation; never manipulate the Supabase `storage` schema directly.
+- [x] Add upload-compensation tests proving a newly uploaded object is deleted after persistence failure and an old object remains until the new state commits.
+- [x] Add `PostgreSqlFixture` using `Testcontainers.PostgreSql`, apply migrations once per test collection, reset portfolio data between tests, and preserve Identity schema.
+- [x] Convert model-only persistence checks into PostgreSQL constraint tests while retaining fast metadata assertions where valuable.
+- [x] Register new abstractions centrally in Application/Infrastructure DI and validate all configuration at startup outside Development.
 
 ### API / Events
 
@@ -513,11 +513,11 @@ Skill categories, technologies, bilingual names, icon validation/upload, publish
 
 ### Tasks
 
-- [ ] Write failing tests for category/technology CRUD, duplicate translated names, category membership, icon types, publish completeness, restricted deletes, and reorder atomicity.
-- [ ] Define `ISkillRepository` around public grouped projection, admin reads, duplicate checks, reference checks, writes, and transactional reorder.
-- [ ] Implement validators for `Primary|Experienced|Familiar|Learning` and `{ type, value }` icon rules, including the Lucide allowlist shared with the frontend.
-- [ ] Implement public/admin controllers and optional icon-upload endpoint only if approved in Sprint 0.
-- [ ] Ensure public SQL filters both category and technology publication state and orders in the database.
+- [x] Write failing tests for category/technology CRUD, duplicate translated names, category membership, icon types, publish completeness, restricted deletes, and reorder atomicity.
+- [x] Define `ISkillRepository` around public grouped projection, admin reads, duplicate checks, reference checks, writes, and transactional reorder.
+- [x] Implement validators for `Primary|Experienced|Familiar|Learning` and `{ type, value }` icon rules, including the Lucide allowlist shared with the frontend.
+- [x] Implement public/admin controllers and optional icon-upload endpoint only if approved in Sprint 0.
+- [x] Ensure public SQL filters both category and technology publication state and orders in the database.
 
 ### API / Events
 
@@ -585,10 +585,10 @@ Work experiences, translations, highlights, technology links, publication, and o
 
 ### Tasks
 
-- [ ] Write failing tests for dates, `isCurrent` derivation, translations, highlights, referenced technologies, publish, delete, and reorder.
-- [ ] Define `IExperienceRepository` with public projection and atomic aggregate persistence.
-- [ ] Implement service validation for required company/start date, localized position, end-date rules, technology existence, and highlight ordering.
-- [ ] Implement controllers, OpenAPI, and structured admin-operation logs.
+- [x] Write failing tests for dates, `isCurrent` derivation, translations, highlights, referenced technologies, publish, delete, and reorder.
+- [x] Define `IExperienceRepository` with public projection and atomic aggregate persistence.
+- [x] Implement service validation for required company/start date, localized position, end-date rules, technology existence, and highlight ordering.
+- [x] Implement controllers, OpenAPI, and structured admin-operation logs.
 
 ### API / Events
 
