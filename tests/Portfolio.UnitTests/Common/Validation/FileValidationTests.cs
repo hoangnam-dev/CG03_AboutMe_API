@@ -25,13 +25,13 @@ public sealed class FileValidationTests
     {
         var upload = CreateUpload(PngBytes, "large.png", "image/png", PngBytes.Length);
 
-        var exception = await Assert.ThrowsAsync<ValidationException>(
+        var exception = await Assert.ThrowsAsync<PayloadTooLargeException>(
             () => FileValidation.ValidateAsync(
                 upload,
                 FileValidationOptions.Images(PngBytes.Length - 1),
                 TestContext.Current.CancellationToken));
 
-        Assert.Equal(["File size exceeds the configured limit."], exception.Errors["file"]);
+        Assert.Equal("File size exceeds the configured limit.", exception.Message);
     }
 
     [Theory]

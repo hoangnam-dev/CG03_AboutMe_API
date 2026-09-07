@@ -28,7 +28,7 @@ public static class FileValidation
 
         if (upload.Length > options.MaxFileSize)
         {
-            throw Invalid("file", "File size exceeds the configured limit.");
+            throw new PayloadTooLargeException("File size exceeds the configured limit.");
         }
 
         if (!upload.Content.CanRead || !upload.Content.CanSeek)

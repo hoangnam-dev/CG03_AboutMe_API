@@ -11,6 +11,8 @@ public interface IFileStorage
         string objectKey,
         CancellationToken cancellationToken);
 
+    Uri GetPublicReadUrl(string bucket, string objectKey);
+
     Task<Uri> CreateSignedReadUrlAsync(
         string bucket,
         string objectKey,

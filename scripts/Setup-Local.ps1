@@ -78,8 +78,10 @@ function Read-WithDefault {
     }
 }
 
-function New-JwtSigningKey {
-    $bytes = New-Object byte[] 48
+function New-RandomSecret {
+    param([int] $ByteCount = 48)
+
+    $bytes = New-Object byte[] $ByteCount
     $generator = [System.Security.Cryptography.RandomNumberGenerator]::Create()
     try {
         $generator.GetBytes($bytes)
@@ -88,6 +90,40 @@ function New-JwtSigningKey {
     finally {
         $generator.Dispose()
         [Array]::Clear($bytes, 0, $bytes.Length)
+    }
+}
+
+function New-JwtDevelopmentCertificate {
+    param(
+        [Parameter(Mandatory = $true)] [string] $Path,
+        [Parameter(Mandatory = $true)] [string] $Password
+    )
+
+    $directory = Split-Path -Parent $Path
+    New-Item -ItemType Directory -Path $directory -Force | Out-Null
+    $rsa = [System.Security.Cryptography.RSA]::Create(2048)
+    try {
+        $request = [System.Security.Cryptography.X509Certificates.CertificateRequest]::new(
+            "CN=portfolio-local-development",
+            $rsa,
+            [System.Security.Cryptography.HashAlgorithmName]::SHA256,
+            [System.Security.Cryptography.RSASignaturePadding]::Pkcs1)
+        $certificate = $request.CreateSelfSigned(
+            [DateTimeOffset]::UtcNow.AddDays(-1),
+            [DateTimeOffset]::UtcNow.AddYears(2))
+        try {
+            $bytes = $certificate.Export(
+                [System.Security.Cryptography.X509Certificates.X509ContentType]::Pfx,
+                $Password)
+            [System.IO.File]::WriteAllBytes($Path, $bytes)
+            [Array]::Clear($bytes, 0, $bytes.Length)
+        }
+        finally {
+            $certificate.Dispose()
+        }
+    }
+    finally {
+        $rsa.Dispose()
     }
 }
 
@@ -107,7 +143,10 @@ function New-EnvironmentFile {
     $frontendOrigin = Read-WithDefault "Local frontend origin" "http://localhost:3000"
     $supabaseUrl = Read-Host "Supabase project URL (https://<project-ref>.supabase.co/)"
     $storageServiceKey = Read-PlainTextSecret "Supabase legacy service_role key"
-    $jwtSigningKey = New-JwtSigningKey
+    $jwtCertificatePassword = New-RandomSecret 32
+    $refreshTokenPepper = New-RandomSecret 48
+    $jwtCertificatePath = Join-Path $repositoryRoot ".secrets\jwt-signing-development.pfx"
+    New-JwtDevelopmentCertificate $jwtCertificatePath $jwtCertificatePassword
 
     foreach ($required in @(
         @{ Name = "database host"; Value = $databaseHost },
@@ -134,7 +173,22 @@ ConnectionStrings__PostgreSql=$connectionString
 Frontend__Origin=$frontendOrigin
 Jwt__Issuer=Portfolio.Api
 Jwt__Audience=Portfolio.Frontend
-Jwt__SigningKey=$jwtSigningKey
+Jwt__ActiveKeyId=local-development
+Jwt__SigningCertificatePath=$jwtCertificatePath
+Jwt__SigningCertificatePassword=$jwtCertificatePassword
+Jwt__AccessTokenMinutes=10
+Jwt__ClockSkewSeconds=30
+
+# Opaque refresh-token sessions
+RefreshToken__IdleLifetimeDays=7
+RefreshToken__AbsoluteLifetimeDays=30
+RefreshToken__Pepper=$refreshTokenPepper
+RefreshToken__CookieName=__Host-refresh
+RefreshToken__CsrfCookieName=__Host-csrf
+RefreshToken__CookieSameSite=Lax
+RateLimit__Auth__LoginPermitLimit=5
+RateLimit__Auth__RefreshPermitLimit=30
+RateLimit__Auth__WindowSeconds=60
 
 # Server-only Supabase Storage configuration
 SupabaseStorage__Url=$normalizedSupabaseUrl
@@ -159,7 +213,8 @@ BootstrapAdmin__Password=
         [System.Text.UTF8Encoding]::new($false))
     $databasePassword = $null
     $storageServiceKey = $null
-    $jwtSigningKey = $null
+    $jwtCertificatePassword = $null
+    $refreshTokenPepper = $null
     Write-Step "Created .env. Keep it outside source control."
 }
 
@@ -280,10 +335,34 @@ function Test-Configuration {
 
     [void] (Get-RequiredSetting $Settings "Jwt__Issuer")
     [void] (Get-RequiredSetting $Settings "Jwt__Audience")
-    $jwtSigningKey = Get-RequiredSetting $Settings "Jwt__SigningKey"
-    if ([System.Text.Encoding]::UTF8.GetByteCount($jwtSigningKey) -lt 32) {
-        throw "Jwt__SigningKey must contain at least 32 UTF-8 bytes."
+    [void] (Get-RequiredSetting $Settings "Jwt__ActiveKeyId")
+    [void] (Get-RequiredSetting $Settings "Jwt__SigningCertificatePath")
+    [void] (Get-RequiredSetting $Settings "Jwt__SigningCertificatePassword")
+    [void] (Get-IntegerSetting $Settings "Jwt__AccessTokenMinutes" 1 60)
+    [void] (Get-IntegerSetting $Settings "Jwt__ClockSkewSeconds" 0 60)
+
+    $idleLifetime = Get-IntegerSetting $Settings "RefreshToken__IdleLifetimeDays" 1 30
+    $absoluteLifetime = Get-IntegerSetting $Settings "RefreshToken__AbsoluteLifetimeDays" 1 90
+    if ($absoluteLifetime -lt $idleLifetime) {
+        throw "RefreshToken__AbsoluteLifetimeDays must be at least the idle lifetime."
     }
+    $refreshTokenPepper = Get-RequiredSetting $Settings "RefreshToken__Pepper"
+    if ([System.Text.Encoding]::UTF8.GetByteCount($refreshTokenPepper) -lt 32) {
+        throw "RefreshToken__Pepper must contain at least 32 UTF-8 bytes."
+    }
+    if ((Get-RequiredSetting $Settings "RefreshToken__CookieName") -ne "__Host-refresh") {
+        throw "RefreshToken__CookieName must be __Host-refresh."
+    }
+    if ((Get-RequiredSetting $Settings "RefreshToken__CsrfCookieName") -ne "__Host-csrf") {
+        throw "RefreshToken__CsrfCookieName must be __Host-csrf."
+    }
+    $sameSite = Get-RequiredSetting $Settings "RefreshToken__CookieSameSite"
+    if ($sameSite -notin @("Lax", "Strict", "None")) {
+        throw "RefreshToken__CookieSameSite must be Lax, Strict, or None."
+    }
+    [void] (Get-IntegerSetting $Settings "RateLimit__Auth__LoginPermitLimit" 1 100)
+    [void] (Get-IntegerSetting $Settings "RateLimit__Auth__RefreshPermitLimit" 1 300)
+    [void] (Get-IntegerSetting $Settings "RateLimit__Auth__WindowSeconds" 1 3600)
 
     $storageUrl = Get-RequiredSetting $Settings "SupabaseStorage__Url"
     Test-AbsoluteWebUri $storageUrl "SupabaseStorage__Url" -HttpsOnly

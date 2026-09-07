@@ -11,7 +11,7 @@ The API accesses Supabase Storage only through the Storage HTTP API. It never wr
 | Certificate evidence | `certificate-files` | Private, server write/delete and signed read URL |
 | Resume/CV documents | `cv-files` | Private, server write/delete and signed read URL |
 
-Bucket names are separately configurable and must be distinct. Create the buckets and their policies in Supabase before enabling uploads. Application tables store only the bucket/object-key identity. Signed URLs are transient response data and are never durable metadata.
+Bucket names are separately configurable and must be distinct. Create the buckets and their policies in Supabase before enabling uploads. Application tables store object-key identity; the legacy-named `profiles.avatar_url` and `profiles.hero_image_url` columns hold object keys, while API responses derive public URLs from the configured `avatars` bucket. Signed URLs are transient response data and are never durable metadata.
 
 ## Object keys and validation
 
@@ -23,6 +23,8 @@ Allowed file content is verified using all of the following before upload:
 - an allowed extension/MIME pair;
 - a matching PNG, JPEG, WebP, or PDF signature;
 - a readable, seekable stream whose position is restored after inspection.
+
+Hero images additionally enforce `Upload__MaxHeroImageWidth` and `Upload__MaxHeroImageHeight` (both default to 8192 pixels and are capped at 16384).
 
 ## Replacement lifecycle
 

@@ -2,6 +2,8 @@
 
 This document freezes the HTTP contract approved by [ADR 0001](../adr/0001-mvp-contract-decisions.md). Feature implementation must update this document before changing a route, field, validation rule, status code, publication rule, or public disclosure rule.
 
+Sequence diagrams and system data flows for the implemented authentication, Profile, About, and media-upload paths are documented in [Current Process Flows](../architecture/CURRENT_PROCESS_FLOWS.md). See also the [Backend Onboarding Guide](../architecture/NEW_MEMBER_BACKEND_GUIDE.md) and the detailed [Authentication Guide](../security/AUTHENTICATION_GUIDE.md).
+
 ## 1. Conventions
 
 ### Base path and media types
@@ -110,6 +112,9 @@ All errors use:
 
 - Public routes are anonymous.
 - Every `/api/v1/admin/**` route requires a valid bearer token with the ASP.NET Core Identity `Admin` role.
+- Access tokens are RS256 JWTs with a 10-minute default lifetime. Browser clients keep them in memory and send them with `Authorization: Bearer`.
+- Refresh tokens are opaque, rotating credentials carried only by the `__Host-refresh` HttpOnly cookie. They are never accepted in JSON request bodies.
+- Every state-changing auth request requires an exact configured `Origin`; refresh/logout/logout-all/session revoke additionally require `X-CSRF-Token`.
 - The MVP has one Portfolio. Requests never contain `userId`, `ownerId`, or `isAdmin` authorization fields.
 - A non-admin authenticated token receives 403; missing or invalid authentication receives 401.
 
@@ -163,7 +168,7 @@ Reorder request:
 
 ### POST `/api/v1/auth/login`
 
-Anonymous. A named rate-limit policy is added in Sprint 9; ASP.NET Core Identity lockout remains authoritative for credential failures.
+Anonymous. The endpoint has an IP-partitioned rate limit; ASP.NET Core Identity lockout is the account-specific credential limiter. Browser requests require the exact configured `Frontend:Origin`.
 
 Request:
 
@@ -183,7 +188,8 @@ Success: 200.
   "data": {
     "accessToken": "<jwt>",
     "tokenType": "Bearer",
-    "expiresAt": "2026-09-05T13:00:00Z"
+    "expiresAt": "2026-09-05T13:00:00Z",
+    "csrfToken": "<session-bound-token>"
   },
   "message": "Signed in.",
   "meta": null
@@ -191,6 +197,28 @@ Success: 200.
 ```
 
 Errors: 400, 401 with generic `Invalid email or password.`, 429, 503.
+
+The response sets `__Host-refresh` with `HttpOnly`, `Secure`, `Path=/`, no `Domain`, and configured `SameSite`. It also sets the signed double-submit `__Host-csrf` cookie with the same host/path/security restrictions but without `HttpOnly`, so browser JavaScript can copy it to `X-CSRF-Token`. The raw refresh token is not present in JSON. Authentication responses include `Cache-Control: no-store` and `Pragma: no-cache`.
+
+### POST `/api/v1/auth/refresh`
+
+Anonymous bearer-wise; requires the refresh cookie, exact `Origin`, and `X-CSRF-Token`. No request body. Rotates the refresh token in a PostgreSQL row-lock transaction and returns the same JSON shape as login with a new access token/CSRF token. Reuse of a consumed or revoked token revokes its whole session. Errors: 401 generic, 403 Origin/CSRF, 429, 503.
+
+### POST `/api/v1/auth/logout`
+
+Authenticated. Requires exact `Origin` and `X-CSRF-Token`. Revokes the current `sid`, revokes its active refresh token, deletes the cookie, and returns 204. The state transition is idempotent.
+
+### POST `/api/v1/auth/logout-all`
+
+Authenticated. Requires exact `Origin` and `X-CSRF-Token`. Revokes every session owned by the current user, increments `AuthVersion`, deletes the cookie, and returns 204.
+
+### GET `/api/v1/auth/sessions`
+
+Authenticated. Returns active sessions owned by the current user. Each item contains `id`, created/last-used/idle/absolute timestamps, audit IP/User-Agent values and `isCurrent`. Token secrets and hashes are never returned.
+
+### DELETE `/api/v1/auth/sessions/{sessionId}`
+
+Authenticated. Requires exact `Origin` and `X-CSRF-Token`. Revokes only a session owned by the current user and returns 204 without revealing whether another user's/random session ID exists.
 
 ### GET `/api/v1/admin/dashboard`
 

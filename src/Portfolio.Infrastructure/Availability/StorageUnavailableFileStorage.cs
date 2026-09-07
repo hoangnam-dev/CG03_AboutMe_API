@@ -5,6 +5,7 @@ namespace Portfolio.Infrastructure.Availability;
 
 internal sealed class StorageUnavailableFileStorage : IFileStorage
 {
+    public Uri GetPublicReadUrl(string bucket, string objectKey) => throw Unavailable();
     public Task<StorageObject> UploadAsync(
         StorageUpload upload,
         CancellationToken cancellationToken) => throw Unavailable();

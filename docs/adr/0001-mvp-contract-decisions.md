@@ -29,6 +29,7 @@ CG03 AboutMe will complete the current personal-portfolio MVP using its existing
 | GATE-16 | Define `IContactNotifier`; use a logging/no-op MVP implementation until an email provider is approved. Persistence succeeds independently of notification. | A missing provider cannot block Contact delivery or justify an invented dependency. |
 | GATE-17 | Add `certificates.show_credential_id`, non-null and default false, in the Sprint 1 forward migration. | BE-06 requires credential IDs to be public only when explicitly allowed, but the current schema has no visibility state. |
 | GATE-18 | Add `POST /api/v1/admin/profile/hero-image` as a dedicated validated upload endpoint; keep `heroImageUrl` read-only in JSON writes. | Hero media is in MVP/schema, but no safe mutation route exists and arbitrary client storage URLs are prohibited. |
+| GATE-19 | Extend backend-managed Identity with RS256 access tokens and PostgreSQL-backed opaque rotating refresh-token sessions. Keep the access token in frontend memory and the refresh token in a host-only HttpOnly cookie protected by exact-Origin and session-bound CSRF validation. | This provides bounded browser sessions, rotation/reuse detection and explicit revocation without introducing Supabase Auth or storing raw tokens. |
 
 ## Considered Options
 

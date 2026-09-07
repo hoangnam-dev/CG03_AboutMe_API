@@ -50,16 +50,16 @@ Current implementation status:
 | --- | --- | --- |
 | Three-project solution and dependency direction | Implemented | API references Application and Infrastructure; Infrastructure references Application |
 | Global ProblemDetails and request ID | Implemented | `GlobalExceptionHandler`, invalid-model response factory, JWT challenge/forbidden handlers |
-| Structured request logging | Partially implemented | Serilog request logging exists; feature audit/security events do not |
+| Structured request logging | Implemented through Sprint 2/auth | Serilog request logging plus Profile/About/auth security events without credential/content logging |
 | Health checks | Implemented | `/health` and `/health/ready` |
-| Admin authentication | Implemented foundation | ASP.NET Core Identity, local login endpoint, JWT issuance, admin bootstrap, lockout |
-| Admin authorization | Implemented foundation | `AdminPolicy` and protected dashboard |
+| Admin authentication | Implemented | ASP.NET Core Identity, RS256 access JWT, rotating opaque refresh sessions, CSRF/Origin controls, bootstrap, lockout |
+| Admin authorization | Implemented | `AdminPolicy`, required JWT/session claims, immediate active-session/auth-version validation |
 | Dashboard | Implemented | Counts projects, certificates, resumes, unread contacts |
-| Database schema | Implemented as initial migration | Portfolio tables, Identity tables, constraints, relationships, and indexes |
-| Portfolio feature APIs | Not implemented | No Profile/About/Skills/Experience/Project/Certificate/Resume/Contact services or controllers |
-| Supabase Storage | Not implemented | No storage abstraction, adapter, options, buckets, or policy scripts |
-| PostgreSQL behavioral integration tests | Not implemented | `Testcontainers.PostgreSql` is referenced but unused; current persistence tests inspect only EF metadata |
-| Rate limiting and spam controls | Not implemented | No rate limiter, honeypot processing, or trusted-proxy configuration |
+| Database schema | Implemented through auth-session migration | Portfolio/Identity tables plus `auth_sessions`, `refresh_tokens`, constraints, relationships, indexes |
+| Portfolio feature APIs | Implemented through Sprint 2 | Profile/About public and admin APIs complete; later feature sprints remain pending |
+| Supabase Storage | Implemented for Sprint 2 | Storage abstraction/adapter, health check and safe Profile avatar/hero replacement |
+| PostgreSQL behavioral integration tests | Implemented through Sprint 2/auth | PostgreSQL Testcontainers cover migrations, constraints, projections and refresh concurrency |
+| Rate limiting and spam controls | Partially implemented | Login/refresh IP limits and Identity account lockout exist; Contact spam controls remain pending |
 | Docker and CI | Not implemented | No Dockerfile, `.dockerignore`, or `.github/workflows` |
 | RLS and Supabase policy artifacts | Not implemented | Initial migration has no RLS policy SQL |
 
@@ -67,11 +67,9 @@ Baseline verification:
 
 ```text
 dotnet restore                                      PASS
-dotnet test --configuration Release --no-restore   PASS (15/15)
+dotnet test --configuration Release --no-build     PASS (156/156)
 dotnet build --configuration Release --no-restore  PASS (0 warnings, 0 errors)
 ```
-
-The first build attempt was intentionally run concurrently with tests and hit a transient compiler output lock. The sequential build passed; this is not an application defect.
 
 ## 2. Architecture Assessment
 
@@ -437,13 +435,13 @@ Profile, social links, About, avatar storage, and their public/admin HTTP contra
 
 ### Tasks
 
-- [ ] Create failing service tests for public published projection, locale selection, email/phone visibility, draft About exclusion, admin updates, and missing profile.
-- [ ] Define `IProfileRepository` queries by slug and the single admin profile, using DTO projections and `AsNoTracking` for reads.
-- [ ] Implement `ProfileService` and `AboutService`; validate names, title, short bio, counters, URLs, translation completeness on publish, and server-side visibility flags.
-- [ ] Implement thin public/admin controllers and exact OpenAPI annotations.
-- [ ] Implement avatar upload with the Sprint 1 storage boundary and compensation sequence.
-- [ ] Implement Hero image upload with the same validation and compensation sequence.
-- [ ] Add structured events for profile update, About update, and avatar replacement without logging content or file bytes.
+- [x] Create failing service tests for public published projection, locale selection, email/phone visibility, draft About exclusion, admin updates, and missing profile.
+- [x] Define `IProfileRepository` queries by slug and the single admin profile, using DTO projections and `AsNoTracking` for reads.
+- [x] Implement `ProfileService` and `AboutService`; validate names, title, short bio, counters, URLs, translation completeness on publish, and server-side visibility flags.
+- [x] Implement thin public/admin controllers and exact OpenAPI annotations.
+- [x] Implement avatar upload with the Sprint 1 storage boundary and compensation sequence.
+- [x] Implement Hero image upload with the same validation and compensation sequence.
+- [x] Add structured events for profile update, About update, and avatar replacement without logging content or file bytes.
 
 ### API / Events
 
