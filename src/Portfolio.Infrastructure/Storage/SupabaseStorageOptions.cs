@@ -15,6 +15,7 @@ public sealed class StorageBucketOptions
 {
     public string Avatars { get; set; } = "avatars";
     public string ProjectImages { get; set; } = "project-images";
+    public string SkillIcons { get; set; } = "skill-icons";
     public string CertificateFiles { get; set; } = "certificate-files";
     public string CvFiles { get; set; } = "cv-files";
 }

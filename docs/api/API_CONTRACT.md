@@ -375,9 +375,31 @@ Category write DTO contains `displayOrder`, `isPublished`, and `translations.en.
 
 Validation: localized names 1-100; years non-negative when present; order non-negative; text icons trim to 1-6 characters; Lucide icon names are 1-100 lowercase kebab-case and on the approved allowlist; image values are managed Storage paths/public URLs or HTTPS URLs on the configured host allowlist. Publishing requires both localized names and a Published parent category.
 
+The approved Lucide allowlist is: `atom`, `blocks`, `boxes`, `code-xml`, `database`, `database-zap`, `git-branch`, `layers`, `panel-top`, `triangle`, and `wind`.
+
 ### GET `/api/v1/portfolio/{slug}/skills?locale=en`
 
 Anonymous. Returns Published categories containing Published skills only. Category and skill order: `displayOrder`, then `id`.
+
+```json
+[
+  {
+    "id": "d1e6b31e-5907-4db9-874a-c0bdd13e74f4",
+    "name": "Backend",
+    "displayOrder": 0,
+    "skills": [
+      {
+        "id": "9d5ba420-715c-43b5-a147-b98a90b05160",
+        "name": "PostgreSQL",
+        "level": "Primary",
+        "yearsOfExperience": 3.5,
+        "icon": { "type": "lucide", "value": "database-zap" },
+        "displayOrder": 0
+      }
+    ]
+  }
+]
+```
 
 ### Administrator Skills routes
 
@@ -396,6 +418,10 @@ Anonymous. Returns Published categories containing Published skills only. Catego
 | POST | `/api/v1/admin/skills/{id}/icon` | 200 | Existing Skill; multipart PNG/JPEG/WebP/SVG after signature/SVG safety validation |
 
 Search matches localized name case-insensitively. Administrator list order is `displayOrder`, then `id`.
+
+Category deletion returns 409 while any technology remains. Technology deletion returns 409 while referenced by Experience, Project, or Certificate. Reorder rejects duplicate IDs/orders and requires the complete current set for the selected category.
+
+Uploaded icons use the public `skill-icons` bucket by default, have a 512 KiB default limit, and are stored under a server-generated `skills/{skillId}/{uuid}.{extension}` key. SVG uploads prohibit DTDs, scripts, event attributes, external references, and non-SVG namespaces. JSON writes may use only a managed public skill-icon URL or an HTTPS URL whose host is configured in `SkillIcons:AllowedExternalHosts`.
 
 ## 5. Work Experience
 

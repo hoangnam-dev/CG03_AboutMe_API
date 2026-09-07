@@ -31,6 +31,7 @@ public sealed partial class SupabaseStorageOptionsValidator
 
         ValidateBucket(options.Buckets.Avatars, "Avatars", failures);
         ValidateBucket(options.Buckets.ProjectImages, "ProjectImages", failures);
+        ValidateBucket(options.Buckets.SkillIcons, "SkillIcons", failures);
         ValidateBucket(options.Buckets.CertificateFiles, "CertificateFiles", failures);
         ValidateBucket(options.Buckets.CvFiles, "CvFiles", failures);
 
@@ -38,6 +39,7 @@ public sealed partial class SupabaseStorageOptionsValidator
         {
             options.Buckets.Avatars,
             options.Buckets.ProjectImages,
+            options.Buckets.SkillIcons,
             options.Buckets.CertificateFiles,
             options.Buckets.CvFiles,
         };

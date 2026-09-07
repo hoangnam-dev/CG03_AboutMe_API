@@ -95,6 +95,37 @@ public sealed class ApiFoundationTests : IClassFixture<PortfolioApiFactory>
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
     }
+
+    [Fact]
+    public async Task SwaggerDeclaresBearerAuthenticationForProtectedOperationsOnly()
+    {
+        var json = await _client.GetStringAsync(
+            "/swagger/v1/swagger.json",
+            TestContext.Current.CancellationToken);
+        using var document = JsonDocument.Parse(json);
+        var root = document.RootElement;
+        var bearer = root.GetProperty("components")
+            .GetProperty("securitySchemes")
+            .GetProperty("Bearer");
+
+        Assert.Equal("http", bearer.GetProperty("type").GetString());
+        Assert.Equal("bearer", bearer.GetProperty("scheme").GetString());
+        Assert.Equal("JWT", bearer.GetProperty("bearerFormat").GetString());
+
+        var paths = root.GetProperty("paths");
+        var adminSecurity = root.GetProperty("security");
+        Assert.Contains(
+            adminSecurity.EnumerateArray(),
+            requirement => requirement.TryGetProperty("Bearer", out _));
+        Assert.Empty(paths.GetProperty("/api/v1/auth/login")
+            .GetProperty("post")
+            .GetProperty("security")
+            .EnumerateArray());
+        Assert.Empty(paths.GetProperty("/api/v1/portfolio/{slug}/profile")
+            .GetProperty("get")
+            .GetProperty("security")
+            .EnumerateArray());
+    }
 }
 
 public sealed class DatabaseOptionalStartupTests

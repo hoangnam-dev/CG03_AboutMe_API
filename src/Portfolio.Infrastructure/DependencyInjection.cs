@@ -9,6 +9,7 @@ using Portfolio.Application.Common.Authentication;
 using Portfolio.Application.Common.Storage;
 using Portfolio.Application.Dashboard;
 using Portfolio.Application.Profiles;
+using Portfolio.Application.Skills;
 using Portfolio.Infrastructure.Authentication;
 using Portfolio.Infrastructure.Availability;
 using Portfolio.Infrastructure.Configuration;
@@ -122,6 +123,7 @@ public static class DependencyInjection
             services.AddScoped<IDashboardRepository, DashboardRepository>();
             services.AddScoped<IProfileRepository, ProfileRepository>();
             services.AddScoped<IAboutRepository, AboutRepository>();
+            services.AddScoped<ISkillRepository, SkillRepository>();
             services.AddScoped<AdminBootstrapper>();
         }
         else
@@ -132,6 +134,7 @@ public static class DependencyInjection
             services.AddScoped<IDashboardRepository, DatabaseUnavailableDashboardRepository>();
             services.AddScoped<IProfileRepository, DatabaseUnavailableProfileRepository>();
             services.AddScoped<IAboutRepository, DatabaseUnavailableAboutRepository>();
+            services.AddScoped<ISkillRepository, DatabaseUnavailableSkillRepository>();
         }
 
         services.AddSingleton(TimeProvider.System);

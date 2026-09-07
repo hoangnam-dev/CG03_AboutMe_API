@@ -70,12 +70,11 @@ function Read-WithDefault {
     )
 
     $value = Read-Host "$Prompt [$DefaultValue]"
-    return if ([string]::IsNullOrWhiteSpace($value)) {
-        $DefaultValue
+    if ([string]::IsNullOrWhiteSpace($value)) {
+        return $DefaultValue
     }
-    else {
-        $value.Trim()
-    }
+
+    return $value.Trim()
 }
 
 function New-RandomSecret {
