@@ -87,6 +87,7 @@ public static class FileValidation
             (".jpg" or ".jpeg", "image/jpeg") => FileKind.Jpeg,
             (".webp", "image/webp") => FileKind.WebP,
             (".pdf", "application/pdf") => FileKind.Pdf,
+            (".svg", "image/svg+xml") => FileKind.Svg,
             _ => null,
         };
 
@@ -99,6 +100,7 @@ public static class FileValidation
             bytes[..4].SequenceEqual("RIFF"u8) &&
             bytes.Slice(8, 4).SequenceEqual("WEBP"u8),
         FileKind.Pdf => bytes.StartsWith("%PDF-"u8),
+        FileKind.Svg => IsSvgPrefix(bytes),
         _ => false,
     };
 
@@ -108,8 +110,16 @@ public static class FileValidation
         FileKind.Jpeg => "image/jpeg",
         FileKind.WebP => "image/webp",
         FileKind.Pdf => "application/pdf",
+        FileKind.Svg => "image/svg+xml",
         _ => throw new ArgumentOutOfRangeException(nameof(kind)),
     };
+
+    private static bool IsSvgPrefix(ReadOnlySpan<byte> bytes)
+    {
+        if (bytes.StartsWith(new byte[] { 0xEF, 0xBB, 0xBF })) bytes = bytes[3..];
+        while (!bytes.IsEmpty && char.IsWhiteSpace((char)bytes[0])) bytes = bytes[1..];
+        return bytes.StartsWith("<svg"u8) || bytes.StartsWith("<?xml"u8);
+    }
 
     private static string SanitizeFileName(string fileName)
     {

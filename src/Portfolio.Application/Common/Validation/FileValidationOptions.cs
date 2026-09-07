@@ -13,4 +13,8 @@ public sealed record FileValidationOptions(
     public static FileValidationOptions ImagesAndPdf(long maxFileSize) =>
         new(maxFileSize, new HashSet<FileKind>(
             [FileKind.Png, FileKind.Jpeg, FileKind.WebP, FileKind.Pdf]));
+
+    public static FileValidationOptions SkillIcons(long maxFileSize) =>
+        new(maxFileSize, new HashSet<FileKind>(
+            [FileKind.Png, FileKind.Jpeg, FileKind.WebP, FileKind.Svg]));
 }

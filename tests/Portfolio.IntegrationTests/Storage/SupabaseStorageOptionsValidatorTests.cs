@@ -60,6 +60,18 @@ public sealed class SupabaseStorageOptionsValidatorTests
     }
 
     [Fact]
+    public void ValidateRejectsUnsafeSkillIconBucketName()
+    {
+        var options = ValidOptions();
+        options.Buckets.SkillIcons = "../icons";
+
+        var result = new SupabaseStorageOptionsValidator().Validate(null, options);
+
+        Assert.True(result.Failed);
+        Assert.Contains("Buckets:SkillIcons", result.FailureMessage, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void ValidateRejectsBucketReuseAcrossDifferentVisibilityPurposes()
     {
         var options = ValidOptions();
