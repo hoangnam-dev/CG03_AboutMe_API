@@ -78,11 +78,14 @@ The API is the authorization boundary for portfolio tables. Local Identity JWTs 
 | --- | --- | --- | --- |
 | Credential stuffing | Repeated login attempts | Identity lockout, named login rate limit, generic 401, HTTPS | Auth service/API/rate-limit tests |
 | Account enumeration | Compare login errors/timing | Same response for unknown email, wrong password, and lockout; no account lookup endpoint | API tests and review |
-| JWT forgery/replay | Tampered or stolen bearer token | Validate issuer/audience/signature/lifetime, 30-second skew, short configured lifetime, TLS | JWT integration tests |
+| JWT forgery/replay | Tampered or stolen bearer token | RS256 only, trusted `kid` key ring, issuer/audience/type/signature/lifetime validation, 30-second skew, 10-minute default lifetime, active-session/auth-version check, TLS | JWT/API integration tests |
 | Role spoofing | Client sends `isAdmin` or custom role header | Role comes only from validated server-issued token/Identity role | Request DTO scan and 403 tests |
 | Bootstrap persistence | Default bootstrap remains enabled | Disabled by default; release checklist disables after provisioning; strong Identity password rules | Configuration validation and runbook |
+| Refresh-token database theft | Stored credential is replayed | Opaque 256-bit secret; database stores only HMAC-SHA256 with a server-held pepper | Protector/persistence tests |
+| Refresh replay/concurrency | Consumed token is retried or two rotations race | `SELECT ... FOR UPDATE`, strict one-time rotation, partial unique active-token index, whole-session revoke on reuse | PostgreSQL concurrency tests |
+| CSRF on cookie endpoints | Attacker causes refresh/logout from another site | Exact Origin check plus session-bound signed CSRF header; CORS credentials restricted to configured frontend | API Origin/CSRF tests |
 
-Accepted MVP limitation: issued JWTs have no refresh or immediate revocation mechanism. Limit token lifetime to at most 60 minutes in production; rotate the signing key for emergency global invalidation. Adding refresh tokens requires a separate authentication contract.
+Accepted limitation: access tokens remain stateless cryptographic artifacts, but authenticated requests perform an active `sid`/`auth_version` database check so logout, session revoke, disable and logout-all take effect immediately for administrator APIs. This adds one indexed database read per authenticated request; public anonymous requests do not pay that cost. MFA/WebAuthn remains recommended future hardening for the administrator account.
 
 ### Authorization and disclosure threats
 

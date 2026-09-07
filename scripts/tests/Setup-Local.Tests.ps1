@@ -64,7 +64,20 @@ ConnectionStrings__PostgreSql=Host=db.example.supabase.co;Port=5432;Database=pos
 Frontend__Origin=http://localhost:3000
 Jwt__Issuer=Portfolio.Api
 Jwt__Audience=Portfolio.Frontend
-Jwt__SigningKey=this-is-a-test-signing-key-with-at-least-32-bytes
+Jwt__ActiveKeyId=test-key
+Jwt__SigningCertificatePath=TestResults/test-only.pfx
+Jwt__SigningCertificatePassword=test-only-password
+Jwt__AccessTokenMinutes=10
+Jwt__ClockSkewSeconds=30
+RefreshToken__IdleLifetimeDays=7
+RefreshToken__AbsoluteLifetimeDays=30
+RefreshToken__Pepper=this-is-a-test-refresh-pepper-with-at-least-32-bytes
+RefreshToken__CookieName=__Host-refresh
+RefreshToken__CsrfCookieName=__Host-csrf
+RefreshToken__CookieSameSite=Lax
+RateLimit__Auth__LoginPermitLimit=5
+RateLimit__Auth__RefreshPermitLimit=30
+RateLimit__Auth__WindowSeconds=60
 SupabaseStorage__Url=https://example.supabase.co/
 SupabaseStorage__ServiceRoleKey=storage-secret
 SupabaseStorage__RequestTimeoutSeconds=30
@@ -101,11 +114,11 @@ try {
     Assert-NotContains $valid.Output "storage-secret" "Storage key is not logged"
 
     $missingJwt = Invoke-SetupValidation `
-        "missing-jwt" `
+        "missing-jwt-certificate" `
         ($validEnvironment.Replace(
-            "Jwt__SigningKey=this-is-a-test-signing-key-with-at-least-32-bytes",
-            "Jwt__SigningKey="))
-    Assert-Equal 1 $missingJwt.ExitCode "missing JWT signing key fails"
+            "Jwt__SigningCertificatePath=TestResults/test-only.pfx",
+            "Jwt__SigningCertificatePath="))
+    Assert-Equal 1 $missingJwt.ExitCode "missing JWT signing certificate fails"
     Assert-NotContains $missingJwt.Output "database-secret" "failure output hides database password"
     Assert-NotContains $missingJwt.Output "storage-secret" "failure output hides Storage key"
 

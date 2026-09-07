@@ -1,5 +1,6 @@
 using System.Globalization;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
+using Portfolio.Api.Authentication;
 using Portfolio.Api.Extensions;
 using Portfolio.Api.Health;
 using Portfolio.Application;
@@ -35,8 +36,10 @@ app.UseExceptionHandler();
 app.UseHttpsRedirection();
 app.UseSerilogRequestLogging();
 app.UseCors("Frontend");
+app.UseMiddleware<AuthOriginValidationMiddleware>();
 app.UseAuthentication();
 app.UseAuthorization();
+app.UseRateLimiter();
 
 if (app.Environment.IsDevelopment())
 {

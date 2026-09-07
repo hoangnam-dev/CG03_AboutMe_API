@@ -11,6 +11,19 @@ namespace Portfolio.IntegrationTests.Storage;
 public sealed class SupabaseFileStorageContractTests
 {
     [Fact]
+    public void PublicUrlEncodesObjectIdentityWithoutCallingProvider()
+    {
+        var storage = CreateStorage(new RecordingHandler(
+            _ => throw new InvalidOperationException("HTTP must not be called")));
+
+        var result = storage.GetPublicReadUrl("avatars", "profiles/a b.png");
+
+        Assert.Equal(
+            "https://project.supabase.co/storage/v1/object/public/avatars/profiles/a%20b.png",
+            result.AbsoluteUri);
+    }
+
+    [Fact]
     public async Task UploadUsesStorageApiAndReturnsDurableObjectIdentity()
     {
         var handler = new RecordingHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
@@ -117,7 +130,7 @@ public sealed class SupabaseFileStorageContractTests
 
     [Theory]
     [InlineData(HttpStatusCode.Conflict, typeof(ConflictException))]
-    [InlineData(HttpStatusCode.RequestEntityTooLarge, typeof(ValidationException))]
+    [InlineData(HttpStatusCode.RequestEntityTooLarge, typeof(PayloadTooLargeException))]
     [InlineData(HttpStatusCode.Forbidden, typeof(ServiceUnavailableException))]
     [InlineData(HttpStatusCode.TooManyRequests, typeof(ServiceUnavailableException))]
     [InlineData(HttpStatusCode.InternalServerError, typeof(ServiceUnavailableException))]

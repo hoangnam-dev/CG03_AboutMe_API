@@ -18,7 +18,8 @@ public sealed class IdentityAuthenticator(
             return null;
         }
 
-        if (userManager.SupportsUserLockout && await userManager.IsLockedOutAsync(user))
+        if (user.IsDisabled ||
+            userManager.SupportsUserLockout && await userManager.IsLockedOutAsync(user))
         {
             return null;
         }
@@ -40,6 +41,6 @@ public sealed class IdentityAuthenticator(
 
         var roles = await userManager.GetRolesAsync(user);
         cancellationToken.ThrowIfCancellationRequested();
-        return new AuthenticatedUser(user.Id, user.Email!, roles.ToArray());
+        return new AuthenticatedUser(user.Id, user.Email!, roles.ToArray(), user.AuthVersion);
     }
 }

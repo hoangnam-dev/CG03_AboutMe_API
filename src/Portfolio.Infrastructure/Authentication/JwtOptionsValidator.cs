@@ -1,4 +1,3 @@
-using System.Text;
 using Microsoft.Extensions.Options;
 
 namespace Portfolio.Infrastructure.Authentication;
@@ -18,14 +17,24 @@ public sealed class JwtOptionsValidator : IValidateOptions<JwtOptions>
             failures.Add("Jwt:Audience is required.");
         }
 
-        if (Encoding.UTF8.GetByteCount(options.SigningKey) < 32)
+        if (string.IsNullOrWhiteSpace(options.ActiveKeyId))
         {
-            failures.Add("Jwt:SigningKey must contain at least 32 UTF-8 bytes.");
+            failures.Add("Jwt:ActiveKeyId is required.");
         }
 
-        if (options.AccessTokenMinutes is < 1 or > 1440)
+        if (string.IsNullOrWhiteSpace(options.SigningCertificatePath))
         {
-            failures.Add("Jwt:AccessTokenMinutes must be between 1 and 1440.");
+            failures.Add("Jwt:SigningCertificatePath is required.");
+        }
+
+        if (options.AccessTokenMinutes is < 1 or > 60)
+        {
+            failures.Add("Jwt:AccessTokenMinutes must be between 1 and 60.");
+        }
+
+        if (options.ClockSkewSeconds is < 0 or > 60)
+        {
+            failures.Add("Jwt:ClockSkewSeconds must be between 0 and 60.");
         }
 
         return failures.Count == 0

@@ -22,7 +22,7 @@ public sealed class MigrationTests(PostgreSqlFixture database)
         var pending = await context.Database.GetPendingMigrationsAsync(
             TestContext.Current.CancellationToken);
 
-        Assert.Equal(2, applied.Count());
+        Assert.Equal(3, applied.Count());
         Assert.Empty(pending);
     }
 
