@@ -3,8 +3,9 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
-using Portfolio.Application.Common.Authentication;
 using Portfolio.Application.About;
+using Portfolio.Application.Authentication;
+using Portfolio.Application.Common.Authentication;
 using Portfolio.Application.Common.Storage;
 using Portfolio.Application.Dashboard;
 using Portfolio.Application.Profiles;
@@ -25,7 +26,7 @@ public static class DependencyInjection
         bool allowUnconfiguredDependencies = false)
     {
         var connectionString = configuration.GetConnectionString("PostgreSql") ?? string.Empty;
-        var jwtSigningKey = configuration[$"{JwtOptions.SectionName}:SigningKey"] ?? string.Empty;
+        var jwtCertificatePath = configuration[$"{JwtOptions.SectionName}:SigningCertificatePath"] ?? string.Empty;
         var bootstrapEnabled = configuration.GetValue<bool>(
             $"{BootstrapAdminOptions.SectionName}:Enabled");
         var databaseRequired = !allowUnconfiguredDependencies || bootstrapEnabled;
@@ -46,16 +47,29 @@ public static class DependencyInjection
 
         services.AddOptions<JwtOptions>()
             .Bind(configuration.GetSection(JwtOptions.SectionName));
-        if (!allowUnconfiguredDependencies || !string.IsNullOrWhiteSpace(jwtSigningKey))
+        if (!allowUnconfiguredDependencies || !string.IsNullOrWhiteSpace(jwtCertificatePath))
         {
             services.AddSingleton<IValidateOptions<JwtOptions>, JwtOptionsValidator>();
             services.AddOptions<JwtOptions>().ValidateOnStart();
+            services.AddSingleton<JwtKeyRing>();
             services.AddSingleton<IAccessTokenIssuer, JwtAccessTokenIssuer>();
         }
         else
         {
+            services.AddSingleton(_ => JwtKeyRing.CreateEphemeral());
             services.AddSingleton<IAccessTokenIssuer, JwtUnavailableAccessTokenIssuer>();
         }
+
+        services.AddOptions<RefreshTokenOptions>()
+            .Bind(configuration.GetSection(RefreshTokenOptions.SectionName));
+        if (!allowUnconfiguredDependencies || !string.IsNullOrWhiteSpace(connectionString))
+        {
+            services.AddSingleton<IValidateOptions<RefreshTokenOptions>, RefreshTokenOptionsValidator>();
+            services.AddOptions<RefreshTokenOptions>().ValidateOnStart();
+        }
+        services.AddSingleton<IRefreshTokenProtector, RefreshTokenProtector>();
+        services.AddSingleton<ICsrfTokenService, SessionCsrfTokenService>();
+        services.AddSingleton<IAuthSessionLifetime, AuthSessionLifetime>();
 
         services.AddSingleton<IValidateOptions<BootstrapAdminOptions>, BootstrapAdminOptionsValidator>();
         services.AddOptions<BootstrapAdminOptions>()
@@ -103,6 +117,8 @@ public static class DependencyInjection
                 .AddEntityFrameworkStores<PortfolioDbContext>();
 
             services.AddScoped<IIdentityAuthenticator, IdentityAuthenticator>();
+            services.AddScoped<IAuthSessionRepository, AuthSessionRepository>();
+            services.AddScoped<IAccessSessionValidator, AccessSessionValidator>();
             services.AddScoped<IDashboardRepository, DashboardRepository>();
             services.AddScoped<IProfileRepository, ProfileRepository>();
             services.AddScoped<IAboutRepository, AboutRepository>();
@@ -111,6 +127,8 @@ public static class DependencyInjection
         else
         {
             services.AddScoped<IIdentityAuthenticator, DatabaseUnavailableIdentityAuthenticator>();
+            services.AddScoped<IAuthSessionRepository, DatabaseUnavailableAuthSessionRepository>();
+            services.AddScoped<IAccessSessionValidator, DatabaseUnavailableAccessSessionValidator>();
             services.AddScoped<IDashboardRepository, DatabaseUnavailableDashboardRepository>();
             services.AddScoped<IProfileRepository, DatabaseUnavailableProfileRepository>();
             services.AddScoped<IAboutRepository, DatabaseUnavailableAboutRepository>();

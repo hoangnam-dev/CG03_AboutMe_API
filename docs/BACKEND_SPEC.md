@@ -404,7 +404,8 @@ Sử dụng RFC Problem Details:
 ### 8.1 ASP.NET Core Identity
 
 - Backend xác thực tài khoản Admin bằng ASP.NET Core Identity qua `POST /api/v1/auth/login`.
-- Backend phát JWT và xác minh signature, issuer, audience, role và thời gian hết hạn.
+- Backend phát access JWT RS256 thời hạn mặc định 10 phút và xác minh signature, thuật toán, `kid`, issuer, audience, type, role, session, auth version và thời gian hết hạn.
+- Refresh token là opaque credential xoay vòng, chỉ đi qua cookie `__Host-refresh`; database chỉ lưu HMAC-SHA256 của secret.
 - `sub` trong token là ID của `AspNetUsers`; role `Admin` do Identity quản lý phía server.
 - MVP không có public signup và không dùng Supabase Auth cho tài khoản Admin.
 - Quyền admin phải được đọc/kiểm tra phía server; không tin cờ do client gửi.
@@ -509,7 +510,7 @@ Quy tắc:
 - Không trả draft qua public API.
 - MVP lưu và trả plain text. Nếu Markdown/rich text được phê duyệt sau này, nội dung phải được sanitize theo contract riêng.
 - `yearsOfExperience` không âm.
-- Có thể lưu About trong `users` hoặc bảng `profile_sections` nếu muốn versioning.
+- About được lưu trong `abouts` và `about_translations` theo schema hiện tại; thay đổi versioning cần ADR/migration riêng.
 
 ### BE-03 — Skills
 
@@ -957,15 +958,27 @@ ConnectionStrings__PostgreSql
 Frontend__Origin
 Jwt__Issuer
 Jwt__Audience
-Jwt__SigningKey
+Jwt__ActiveKeyId
+Jwt__SigningCertificatePath
+Jwt__SigningCertificatePassword
+Jwt__ValidationCertificatePaths__<kid>
 Jwt__AccessTokenMinutes
+Jwt__ClockSkewSeconds
+RefreshToken__IdleLifetimeDays
+RefreshToken__AbsoluteLifetimeDays
+RefreshToken__Pepper
+RefreshToken__CookieName
+RefreshToken__CsrfCookieName
+RefreshToken__CookieSameSite
 BootstrapAdmin__Enabled
 BootstrapAdmin__Email
 BootstrapAdmin__Password
 SupabaseStorage__Url
 SupabaseStorage__ServiceRoleKey
 Upload__MaxFileSize
-RateLimit__Login__PermitLimit
+RateLimit__Auth__LoginPermitLimit
+RateLimit__Auth__RefreshPermitLimit
+RateLimit__Auth__WindowSeconds
 RateLimit__Contact__PermitLimit
 ```
 

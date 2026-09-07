@@ -39,10 +39,10 @@
 - Produces: `IAboutService.GetPublicAsync(string,string?,CancellationToken)`, `GetAdminAsync`, and `UpdateAsync`.
 - Produces feature repositories with public DTO projections, tracked update aggregates, conflict checks, and one logical `SaveChangesAsync` call.
 
-- [ ] Write service tests whose literal assertions catch hidden contact disclosure, locale mixing, draft About disclosure, duplicate normalized slugs/platforms/orders, incomplete translations, invalid counters/URLs, missing Profile, and read-only media mutation.
-- [ ] Run the focused tests and confirm compilation/failures are caused by the missing Sprint 2 contracts.
-- [ ] Add request/response records and small feature-specific interfaces; annotate nullable public fields so policy-hidden properties are absent from JSON.
-- [ ] Re-run focused tests; contract-only tests must compile while behavior tests remain red.
+- [x] Write service tests whose literal assertions catch hidden contact disclosure, locale mixing, draft About disclosure, duplicate normalized slugs/platforms/orders, incomplete translations, invalid counters/URLs, missing Profile, and read-only media mutation.
+- [x] Run the focused tests and confirm compilation/failures are caused by the missing Sprint 2 contracts.
+- [x] Add request/response records and small feature-specific interfaces; annotate nullable public fields so policy-hidden properties are absent from JSON.
+- [x] Re-run focused tests; contract-only tests must compile while behavior tests remain red.
 
 ### Task 2: Profile/About services and media replacement
 
@@ -59,11 +59,11 @@
 - Consumes: Sprint 1 `FileValidation`, `SlugNormalizer`, `PublishTranslationValidation`, `StorageReplacement`, `IFileStorage`, and `TimeProvider`.
 - Produces: validated localized public/admin behavior and public media URLs without exposing persisted object keys.
 
-- [ ] Implement the minimum validation and mapping needed for one red service case at a time, running each focused test after its implementation.
-- [ ] Generate media keys as `profiles/{profileId}/{uuid}.{validatedExtension}` in the configured public avatars bucket.
-- [ ] Extend storage with deterministic public-read URL resolution and use `StorageReplacement.ReplaceAsync` so persistence failure deletes the new object and successful commit precedes old deletion.
-- [ ] Add structured `LoggerMessage` events containing resource IDs/media kind only, never Profile/About text, filenames, or bytes.
-- [ ] Run all Profile/About and shared storage unit tests green, then refactor duplication without changing behavior.
+- [x] Implement the minimum validation and mapping needed for one red service case at a time, running each focused test after its implementation.
+- [x] Generate media keys as `profiles/{profileId}/{uuid}.{validatedExtension}` in the configured public avatars bucket.
+- [x] Extend storage with deterministic public-read URL resolution and use `StorageReplacement.ReplaceAsync` so persistence failure deletes the new object and successful commit precedes old deletion.
+- [x] Add structured `LoggerMessage` events containing resource IDs/media kind only, never Profile/About text, filenames, or bytes.
+- [x] Run all Profile/About and shared storage unit tests green, then refactor duplication without changing behavior.
 
 ### Task 3: EF Core repositories and dependency wiring
 
@@ -80,11 +80,11 @@
 - Consumes: the Task 1 repository interfaces and current `PortfolioDbContext` entities/configuration.
 - Produces: SQL-side slug/locale/publication filters, requested-locale projections, deterministic social ordering, tracked aggregates for atomic replacement, and single-save upserts.
 
-- [ ] Add PostgreSQL integration tests for public projection filtering, requested locale, unique slug, unique social platform, and one About per Profile.
-- [ ] Run focused integration tests and verify the missing repositories fail the test build/run for the expected reason.
-- [ ] Implement `AsNoTracking` public/admin reads, tracked mutation reads, duplicate checks, aggregate replacement, and cancellation propagation.
-- [ ] Register real repositories when PostgreSQL is configured and explicit 503 fallbacks otherwise.
-- [ ] Run focused persistence tests green; if Docker is unavailable, report rather than silently skipping them.
+- [x] Add PostgreSQL integration tests for public projection filtering, requested locale, unique slug, unique social platform, and one About per Profile.
+- [x] Run focused integration tests and verify the missing repositories fail the test build/run for the expected reason.
+- [x] Implement `AsNoTracking` public/admin reads, tracked mutation reads, duplicate checks, aggregate replacement, and cancellation propagation.
+- [x] Register real repositories when PostgreSQL is configured and explicit 503 fallbacks otherwise.
+- [x] Run focused persistence tests green; if Docker is unavailable, report rather than silently skipping them.
 
 ### Task 4: HTTP controllers, OpenAPI contract, and API security tests
 
@@ -100,9 +100,8 @@
 - Consumes: Task 1 service interfaces and ASP.NET Core `IFormFile` model binding.
 - Produces: all section-3 public/admin routes using `ApiResponse<T>` on success and RFC Problem Details on failures.
 
-- [ ] Add API tests for anonymous public access, anonymous administrator 401, non-admin 403, missing resources 404, unsupported locale 400, model validation Problem Details, and multipart boundaries.
-- [ ] Run the focused API tests and confirm they fail because routes are absent.
-- [ ] Add thin public/admin controller actions, `AdminPolicy`, exact response annotations, multipart conversion, request-size enforcement, and options wiring.
-- [ ] Run focused API tests green.
-- [ ] Run `dotnet restore`, `dotnet build --configuration Release`, and `dotnet test --configuration Release`; inspect the diff and re-check all Sprint 2 acceptance criteria before reporting completion.
-
+- [x] Add API tests for anonymous public access, anonymous administrator 401, non-admin 403, missing resources 404, unsupported locale 400, model validation Problem Details, and multipart boundaries.
+- [x] Run the focused API tests and confirm they fail because routes are absent.
+- [x] Add thin public/admin controller actions, `AdminPolicy`, exact response annotations, multipart conversion, request-size enforcement, and options wiring.
+- [x] Run focused API tests green.
+- [x] Run `dotnet restore`, `dotnet build --configuration Release`, and `dotnet test --configuration Release`; inspect the diff and re-check all Sprint 2 acceptance criteria before reporting completion.

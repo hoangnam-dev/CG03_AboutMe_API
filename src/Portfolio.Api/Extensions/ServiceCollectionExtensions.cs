@@ -1,18 +1,22 @@
+using System.Globalization;
+using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
-using System.Security.Cryptography;
-using System.Text;
+using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Cors.Infrastructure;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
+using Portfolio.Api.Authentication;
 using Portfolio.Api.Authorization;
 using Portfolio.Api.Configuration;
 using Portfolio.Api.Errors;
+using Portfolio.Application.Common.Authentication;
+using Portfolio.Application.Profiles;
 using Portfolio.Infrastructure.Authentication;
 using Portfolio.Infrastructure.Persistence;
 using Portfolio.Infrastructure.Storage;
-using Portfolio.Application.Profiles;
 
 namespace Portfolio.Api.Extensions;
 
@@ -31,6 +35,10 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IValidateOptions<UploadOptions>, UploadOptionsValidator>();
         services.AddOptions<UploadOptions>()
             .Bind(configuration.GetSection(UploadOptions.SectionName))
+            .ValidateOnStart();
+        services.AddSingleton<IValidateOptions<AuthRateLimitOptions>, AuthRateLimitOptionsValidator>();
+        services.AddOptions<AuthRateLimitOptions>()
+            .Bind(configuration.GetSection(AuthRateLimitOptions.SectionName))
             .ValidateOnStart();
         services.AddSingleton(provider =>
         {
@@ -80,18 +88,15 @@ public static class ServiceCollectionExtensions
                 options.AddPolicy("Frontend", policy =>
                     policy.WithOrigins(frontend.Value.Origin)
                         .AllowAnyHeader()
-                        .AllowAnyMethod()));
+                        .AllowAnyMethod()
+                        .AllowCredentials()));
 
         services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
-            .AddJwtBearer(options =>
+            .AddJwtBearer();
+        services.AddOptions<JwtBearerOptions>(JwtBearerDefaults.AuthenticationScheme)
+            .Configure<JwtKeyRing, IOptions<JwtOptions>>((options, keyRing, configuredJwt) =>
             {
-                var jwt = configuration.GetSection(JwtOptions.SectionName).Get<JwtOptions>()
-                    ?? new JwtOptions();
-                var signingKey = jwt.SigningKey;
-                if (allowUnconfiguredDependencies && string.IsNullOrWhiteSpace(signingKey))
-                {
-                    signingKey = Convert.ToBase64String(RandomNumberGenerator.GetBytes(32));
-                }
+                var jwt = configuredJwt.Value;
 
                 options.MapInboundClaims = false;
                 options.TokenValidationParameters = new TokenValidationParameters
@@ -101,15 +106,22 @@ public static class ServiceCollectionExtensions
                     ValidateAudience = true,
                     ValidAudience = jwt.Audience,
                     ValidateIssuerSigningKey = true,
-                    IssuerSigningKey = new SymmetricSecurityKey(
-                        Encoding.UTF8.GetBytes(signingKey)),
+                    IssuerSigningKeyResolver = (_, _, keyId, _) =>
+                        keyId is not null && keyRing.ValidationKeys.TryGetValue(keyId, out var key)
+                            ? [key]
+                            : [],
+                    ValidAlgorithms = [SecurityAlgorithms.RsaSha256],
                     ValidateLifetime = true,
-                    ClockSkew = TimeSpan.FromSeconds(30),
+                    RequireExpirationTime = true,
+                    RequireSignedTokens = true,
+                    ValidTypes = ["JWT"],
+                    ClockSkew = TimeSpan.FromSeconds(jwt.ClockSkewSeconds),
                     NameClaimType = ClaimTypes.Email,
                     RoleClaimType = ClaimTypes.Role,
                 };
                 options.Events = new JwtBearerEvents
                 {
+                    OnTokenValidated = ValidateAccessSessionAsync,
                     OnChallenge = async context =>
                     {
                         context.HandleResponse();
@@ -130,6 +142,38 @@ public static class ServiceCollectionExtensions
             .AddPolicy(
                 AuthorizationPolicies.Admin,
                 policy => policy.RequireRole(AdminBootstrapper.AdminRole));
+
+        services.AddHttpContextAccessor();
+        services.AddScoped<ICurrentUserAccessor, CurrentUserAccessor>();
+        services.AddScoped<AuthCookieWriter>();
+        services.AddRateLimiter(options =>
+        {
+            var configured = configuration.GetSection(AuthRateLimitOptions.SectionName)
+                .Get<AuthRateLimitOptions>() ?? new AuthRateLimitOptions();
+            options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+            options.AddPolicy("AuthLogin", context => CreateIpPartition(
+                context,
+                configured.LoginPermitLimit,
+                configured.WindowSeconds));
+            options.AddPolicy("AuthRefresh", context => CreateIpPartition(
+                context,
+                configured.RefreshPermitLimit,
+                configured.WindowSeconds));
+            options.OnRejected = async (context, cancellationToken) =>
+            {
+                if (context.Lease.TryGetMetadata(MetadataName.RetryAfter, out var retryAfter))
+                {
+                    context.HttpContext.Response.Headers.RetryAfter =
+                        Math.Ceiling(retryAfter.TotalSeconds).ToString(CultureInfo.InvariantCulture);
+                }
+
+                await WriteAuthorizationProblemAsync(
+                    context.HttpContext,
+                    StatusCodes.Status429TooManyRequests,
+                    "Too many requests",
+                    "Too many authentication attempts.");
+            };
+        });
 
         var healthChecks = services.AddHealthChecks();
         if (string.IsNullOrWhiteSpace(configuration.GetConnectionString("PostgreSql")))
@@ -168,6 +212,52 @@ public static class ServiceCollectionExtensions
         services.AddEndpointsApiExplorer();
         services.AddSwaggerGen();
         return services;
+    }
+
+    private static RateLimitPartition<string> CreateIpPartition(
+        HttpContext context,
+        int permitLimit,
+        int windowSeconds) =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+            _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = permitLimit,
+                Window = TimeSpan.FromSeconds(windowSeconds),
+                QueueLimit = 0,
+                AutoReplenishment = true,
+            });
+
+    private static async Task ValidateAccessSessionAsync(TokenValidatedContext context)
+    {
+        var principal = context.Principal;
+        if (!Guid.TryParse(principal?.FindFirst(JwtRegisteredClaimNames.Sub)?.Value, out var userId) ||
+            !Guid.TryParse(principal?.FindFirst("sid")?.Value, out var sessionId) ||
+            string.IsNullOrWhiteSpace(principal?.FindFirst(JwtRegisteredClaimNames.Jti)?.Value) ||
+            !long.TryParse(
+                principal?.FindFirst(JwtRegisteredClaimNames.Iat)?.Value,
+                NumberStyles.None,
+                CultureInfo.InvariantCulture,
+                out _) ||
+            principal?.FindFirst(ClaimTypes.Role) is null ||
+            !int.TryParse(
+                principal?.FindFirst("auth_version")?.Value,
+                NumberStyles.None,
+                CultureInfo.InvariantCulture,
+                out var authVersion))
+        {
+            context.Fail("Required access-token claims are missing.");
+            return;
+        }
+
+        var validator = context.HttpContext.RequestServices
+            .GetRequiredService<IAccessSessionValidator>();
+        if (!await validator.IsValidAsync(
+                new CurrentAuthSession(userId, sessionId, authVersion),
+                context.HttpContext.RequestAborted))
+        {
+            context.Fail("The authentication session is no longer active.");
+        }
     }
 
     private static async Task WriteAuthorizationProblemAsync(

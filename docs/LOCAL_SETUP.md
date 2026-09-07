@@ -1,5 +1,7 @@
 # Thiết lập backend trên máy local
 
+Luồng setup/bootstrap, đăng nhập và xử lý API Profile/About được minh họa trong [Current Process Flows](architecture/CURRENT_PROCESS_FLOWS.md). Member mới nên đọc thêm [Backend Onboarding Guide](architecture/NEW_MEMBER_BACKEND_GUIDE.md) và [Authentication Guide](security/AUTHENTICATION_GUIDE.md).
+
 Tài liệu này dành cho member mới bắt đầu từ lúc clone repository đến khi API kết nối được PostgreSQL và Storage trên Supabase.
 
 ## 1. Yêu cầu môi trường
@@ -70,7 +72,7 @@ Nếu `.env` chưa tồn tại, script sẽ hỏi:
 - Supabase project URL;
 - legacy Storage `service_role` key.
 
-Script tự sinh JWT signing key ngẫu nhiên 48 bytes, sau đó:
+Script tự sinh RSA development signing certificate, certificate password và refresh-token pepper bằng cryptographic randomness, sau đó:
 
 1. tạo `.env` bằng UTF-8 không BOM;
 2. kiểm tra cấu hình mà không in secret;
@@ -110,7 +112,18 @@ ConnectionStrings__PostgreSql=Host=<host>;Port=5432;Database=postgres;Username=<
 Frontend__Origin=http://localhost:3000
 Jwt__Issuer=Portfolio.Api
 Jwt__Audience=Portfolio.Frontend
-Jwt__SigningKey=<at-least-32-utf8-bytes>
+Jwt__AccessTokenMinutes=10
+Jwt__ClockSkewSeconds=30
+Jwt__ActiveKeyId=development-local
+Jwt__SigningCertificatePath=.secrets/jwt-signing-development.pfx
+Jwt__SigningCertificatePassword=<generated-local-certificate-password>
+
+RefreshToken__IdleLifetimeDays=7
+RefreshToken__AbsoluteLifetimeDays=30
+RefreshToken__Pepper=<generated-random-pepper>
+RefreshToken__CookieName=__Host-refresh
+RefreshToken__CsrfCookieName=__Host-csrf
+RefreshToken__CookieSameSite=Lax
 
 SupabaseStorage__Url=https://<project-ref>.supabase.co/
 SupabaseStorage__ServiceRoleKey=<legacy-service-role-jwt>
@@ -137,11 +150,15 @@ JWT trong dự án là ASP.NET Core Identity JWT, không phải Supabase Auth JW
 
 - `Jwt__Issuer`: mặc định `Portfolio.Api`;
 - `Jwt__Audience`: mặc định `Portfolio.Frontend`;
-- `Jwt__SigningKey`: tối thiểu 32 UTF-8 bytes;
-- mỗi developer nên có signing key local riêng;
-- không dùng signing key local cho production.
+- `Jwt__ActiveKeyId`: `kid` của certificate đang ký;
+- `Jwt__SigningCertificatePath`: RSA PFX có private key, mặc định nằm trong `.secrets/`;
+- `Jwt__SigningCertificatePassword`: password ngẫu nhiên của PFX;
+- `RefreshToken__Pepper`: secret HMAC độc lập, tối thiểu 32 UTF-8 bytes;
+- `RefreshToken__CsrfCookieName`: cookie signed double-submit đọc được bởi frontend, bắt buộc `__Host-csrf`;
+- mỗi developer phải dùng certificate và pepper local riêng;
+- không dùng certificate/pepper local cho production.
 
-Khi script tạo `.env` mới, signing key được tạo bằng cryptographic random bytes; member không cần tự nghĩ password-like string.
+Khi script tạo `.env` mới, certificate, password và pepper đều được sinh tự động. `.secrets/` đã được gitignore. Production phải dùng secret store hoặc mounted secret và quy trình key rotation trong [Authentication Guide](security/AUTHENTICATION_GUIDE.md).
 
 ## 5. User Secrets và IDE
 
@@ -196,6 +213,8 @@ dotnet ef migrations list --project src\Portfolio.Infrastructure --startup-proje
 
 `-ApplyMigrations` là opt-in vì migration thay đổi database dùng chung.
 
+Migration authentication mới là `20260906132748_AddRefreshTokenSessions`. Migration này thêm `AuthVersion`/`IsDisabled` vào `AspNetUsers` và tạo `auth_sessions`, `refresh_tokens` cùng partial unique index cho một active refresh token mỗi session.
+
 ### Database đã có dữ liệu
 
 Backup database trước. Trong Supabase SQL Editor, kiểm tra lịch sử migration:
@@ -217,6 +236,20 @@ where issued_date is null;
 ```
 
 Kết quả phải bằng `0` trước khi áp dụng correction migration.
+
+### Tạo tài khoản đăng nhập local
+
+Setup script không trực tiếp ghi user vào database và mặc định giữ bootstrap tắt. Sau khi migrations đã được áp dụng, cấu hình một lần trong `.env` hoặc User Secrets:
+
+```dotenv
+BootstrapAdmin__Enabled=true
+BootstrapAdmin__Email=<your-local-admin-email>
+BootstrapAdmin__Password=
+```
+
+Đặt password thực tế bằng secret input/User Secrets; password phải dài ít nhất 12 ký tự và có chữ hoa, chữ thường, chữ số, ký tự đặc biệt. Chạy `Setup-Local.ps1 -SyncUserSecrets`, rồi khởi động API. `AdminBootstrapper` dùng ASP.NET Core Identity để tạo password hash, role `Admin` và quan hệ user-role.
+
+Sau khi log xác nhận bootstrap thành công, đổi ngay `BootstrapAdmin__Enabled=false`, đồng bộ User Secrets và restart API. Cơ chế này idempotent nhưng không nên để bật lâu dài. Không commit email/password thật.
 
 ## 7. Chạy API
 

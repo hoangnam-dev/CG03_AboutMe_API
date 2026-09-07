@@ -8,7 +8,7 @@ Database phục vụ portfolio song ngữ Anh (`en`)/Việt (`vi`), Admin CRUD, 
 - Nội dung dịch nằm trong bảng `*_translations`, khóa chính `(entity_id, locale_code)`.
 - File nằm trên object storage; database chỉ lưu path/URL và metadata.
 - `created_at` của Resume là thời điểm upload bất biến. Timezone cấp version là `Asia/Ho_Chi_Minh`.
-- ASP.NET Core Identity quản lý tài khoản/role Admin và không được định nghĩa lại tại đây.
+- ASP.NET Core Identity quản lý tài khoản/role Admin qua các bảng `AspNetUsers`, `AspNetRoles`, `AspNetUserRoles`, `AspNetUserClaims`, `AspNetRoleClaims`, `AspNetUserLogins` và `AspNetUserTokens` do EF migration tạo. Không định nghĩa thêm bảng credentials `users`; xem [Authentication Guide](security/AUTHENTICATION_GUIDE.md).
 - MVP chỉ có một Portfolio; content không có owner FK. Mở rộng multi-Portfolio cần migration/ADR riêng.
 - Public API chỉ trả nội dung đã publish và phải loại dữ liệu nhạy cảm của project `limited`.
 - Các hiệu chỉnh sau initial migration được quyết định tại `docs/adr/0001-mvp-contract-decisions.md`; không sửa migration đã tạo.
@@ -25,8 +25,29 @@ Database phục vụ portfolio song ngữ Anh (`en`)/Việt (`vi`), Admin CRUD, 
 | `Certificate` | `certificates`, `certificate_translations`, `certificate_technologies` |
 | `CvFile` | `resumes`, `resume_translations`, `resume_version_counters` |
 | `ContactMessage` | `contact_messages` |
+| Authentication session | `AspNetUsers`, `auth_sessions`, `refresh_tokens` |
 
 `DashboardStats`, pagination, API wrapper, signed `downloadUrl`, `publishConfirmed` và multipart `fileIndex` là dữ liệu tính toán/tạm thời, không có column riêng. `Experience.isCurrent` được suy ra từ `end_date IS NULL`.
+
+### 2.1 Authentication sessions
+
+`AspNetUsers` là bảng user chuẩn của ASP.NET Core Identity và được mở rộng với:
+
+- `AuthVersion integer NOT NULL DEFAULT 0`: tăng khi cần vô hiệu hóa toàn bộ phiên/token của user;
+- `IsDisabled boolean NOT NULL DEFAULT false`: chặn login, refresh và authenticated request.
+
+`auth_sessions` lưu một browser/login session gồm `id`, `user_id`, thời gian tạo/sử dụng, idle/absolute expiry, trạng thái revoke và IP/User-Agent phục vụ audit. `refresh_tokens` lưu selector UUID và HMAC-SHA256 32 byte của secret, quan hệ parent/replacement và trạng thái consumed/revoked. Raw token không bao giờ được lưu.
+
+Các invariant database quan trọng:
+
+- FK `auth_sessions.user_id -> AspNetUsers.Id` và cascade delete;
+- FK `refresh_tokens.session_id -> auth_sessions.id` và cascade delete;
+- self-FK parent/replacement dùng restrict delete;
+- `idle_expires_at <= absolute_expires_at`;
+- `octet_length(secret_hash) = 32`;
+- partial unique index `ux_refresh_tokens_one_active_per_session` trên `session_id` với predicate `consumed_at IS NULL AND revoked_at IS NULL`.
+
+Schema này được tạo bởi migration `20260906132748_AddRefreshTokenSessions`; không sửa migration cũ đã áp dụng.
 
 ## 3. PostgreSQL DDL
 

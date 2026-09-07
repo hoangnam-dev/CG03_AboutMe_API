@@ -1,11 +1,7 @@
 using System.Net;
 using System.Net.Http.Headers;
-using System.IdentityModel.Tokens.Jwt;
-using System.Security.Claims;
-using System.Text;
 using System.Text.Json;
 using Microsoft.AspNetCore.Mvc.Testing;
-using Microsoft.IdentityModel.Tokens;
 using Xunit;
 
 namespace Portfolio.IntegrationTests.Api;
@@ -13,9 +9,13 @@ namespace Portfolio.IntegrationTests.Api;
 public sealed class ProfileAboutApiTests : IClassFixture<DatabaseOptionalApiFactory>
 {
     private readonly HttpClient _client;
+    private readonly DatabaseOptionalApiFactory _factory;
 
-    public ProfileAboutApiTests(DatabaseOptionalApiFactory factory) =>
+    public ProfileAboutApiTests(DatabaseOptionalApiFactory factory)
+    {
+        _factory = factory;
         _client = factory.CreateClient(new WebApplicationFactoryClientOptions { AllowAutoRedirect = false });
+    }
 
     [Theory]
     [InlineData("/api/v1/admin/profile")]
@@ -58,24 +58,11 @@ public sealed class ProfileAboutApiTests : IClassFixture<DatabaseOptionalApiFact
     public async Task NonAdminTokenReceivesForbidden()
     {
         using var request = new HttpRequestMessage(HttpMethod.Get, "/api/v1/admin/profile");
-        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", CreateNonAdminToken());
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _factory.CreateToken());
 
         var response = await _client.SendAsync(request, TestContext.Current.CancellationToken);
 
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
         Assert.Equal("application/problem+json", response.Content.Headers.ContentType?.MediaType);
-    }
-
-    private static string CreateNonAdminToken()
-    {
-        var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(
-            "this-is-a-strong-test-signing-key-with-more-than-32-bytes"));
-        var token = new JwtSecurityToken(
-            issuer: "portfolio-tests",
-            audience: "portfolio-client",
-            claims: [new Claim(ClaimTypes.NameIdentifier, Guid.NewGuid().ToString()), new Claim(ClaimTypes.Role, "User")],
-            expires: DateTime.UtcNow.AddMinutes(5),
-            signingCredentials: new SigningCredentials(key, SecurityAlgorithms.HmacSha256));
-        return new JwtSecurityTokenHandler().WriteToken(token);
     }
 }
