@@ -72,6 +72,7 @@ public sealed class PostgreSqlFixture : IAsyncLifetime
                 experience_highlights,
                 experience_technologies,
                 experience_translations,
+                work_experiences,
                 project_highlights,
                 project_image_translations,
                 project_images,

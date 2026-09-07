@@ -3,6 +3,7 @@ using Portfolio.Application.About;
 using Portfolio.Application.Authentication;
 using Portfolio.Application.Common.Storage;
 using Portfolio.Application.Dashboard;
+using Portfolio.Application.Experiences;
 using Portfolio.Application.Profiles;
 using Portfolio.Application.Skills;
 
@@ -16,6 +17,7 @@ public static class DependencyInjection
         services.AddScoped<IDashboardService, DashboardService>();
         services.AddScoped<IProfileService, ProfileService>();
         services.AddScoped<IAboutService, AboutService>();
+        services.AddScoped<IExperienceService, ExperienceService>();
         services.AddScoped<ISkillService, SkillService>();
         services.AddScoped<StorageReplacement>();
         return services;

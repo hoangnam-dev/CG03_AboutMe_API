@@ -23,6 +23,7 @@ Its purpose is regression prevention, not incident narration.
 | BUG-2026-002 | Resolved | EF Core | Shared | Migration command loaded stale build output | `ef-core`, `migration`, `no-build`, `git-safety` |
 | BUG-2026-003 | Resolved | Auth | Shared | Case-sensitive auth path check allowed Origin bypass | `csrf`, `origin`, `routing`, `case-sensitivity` |
 | BUG-2026-004 | Resolved | EF Core | Skills | CLR-default enum was replaced by a database default | `ef-core`, `enum`, `sentinel`, `database-default`, `postgresql` |
+| BUG-2026-005 | Resolved | Testing | Shared | PostgreSQL reset omitted a parent table | `test-isolation`, `postgresql`, `truncate`, `shared-fixture` |
 
 ---
 
@@ -216,6 +217,55 @@ When an EF property has a database default and CLR default is a valid explicit d
 
 - `src/Portfolio.Infrastructure/Persistence/Configurations/SkillConfigurations.cs`
 - `tests/Portfolio.IntegrationTests/Persistence/SkillRepositoryTests.cs`
+
+### Related lessons
+
+- None.
+
+---
+
+## BUG-2026-005 — PostgreSQL reset omitted a parent table
+
+- **Status:** Resolved
+- **Area:** Testing
+- **Feature:** Shared
+- **First observed:** 2026-09-07
+- **Last updated:** 2026-09-07
+- **Tags:** `test-isolation`, `postgresql`, `truncate`, `shared-fixture`
+
+### Symptom
+
+An Experience repository test expected two rows after reset but read rows created by earlier tests in the same PostgreSQL collection.
+
+### Root cause
+
+`ResetApplicationDataAsync` truncated all Experience child tables but omitted the parent `work_experiences` table.
+
+### Why it happened
+
+The shared reset list was updated for the child tables without verifying that every mutable application table, including its aggregate root, was present.
+
+### Correct fix
+
+Add `work_experiences` to the fixture's single `TRUNCATE ... RESTART IDENTITY CASCADE` statement.
+
+### Prevention rule
+
+Whenever a persisted aggregate becomes test-active, verify the shared PostgreSQL reset truncates its root table as well as child tables, and prove isolation with sequential repository tests.
+
+### Regression test
+
+`tests/Portfolio.IntegrationTests/Persistence/ExperienceRepositoryTests.cs` — the class-level sequence, especially `ReorderRejectsPartialSetWithoutChangingOrders`, detects leaked Experience rows.
+
+### Verification
+
+- The focused suite failed with leaked rows before the fix.
+- `dotnet test tests/Portfolio.IntegrationTests/Portfolio.IntegrationTests.csproj --configuration Release --no-restore --filter FullyQualifiedName~ExperienceRepositoryTests` with Docker API 1.43 — 5 passed, 0 failed after the fix.
+
+### Relevant files
+
+- `tests/Portfolio.IntegrationTests/Infrastructure/PostgreSqlFixture.cs`
+- `tests/Portfolio.IntegrationTests/Persistence/ExperienceRepositoryTests.cs`
 
 ### Related lessons
 
