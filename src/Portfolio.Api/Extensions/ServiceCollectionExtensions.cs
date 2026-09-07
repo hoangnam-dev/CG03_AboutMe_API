@@ -8,12 +8,15 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
+using Microsoft.OpenApi;
 using Portfolio.Api.Authentication;
 using Portfolio.Api.Authorization;
 using Portfolio.Api.Configuration;
 using Portfolio.Api.Errors;
+using Portfolio.Api.OpenApi;
 using Portfolio.Application.Common.Authentication;
 using Portfolio.Application.Profiles;
+using Portfolio.Application.Skills;
 using Portfolio.Infrastructure.Authentication;
 using Portfolio.Infrastructure.Persistence;
 using Portfolio.Infrastructure.Storage;
@@ -50,6 +53,25 @@ public static class ServiceCollectionExtensions
                 uploads.MaxFileSize,
                 uploads.MaxHeroImageWidth,
                 uploads.MaxHeroImageHeight);
+        });
+        services.AddSingleton<IValidateOptions<SkillIconOptions>, SkillIconOptionsValidator>();
+        services.AddOptions<SkillIconOptions>()
+            .Bind(configuration.GetSection(SkillIconOptions.SectionName))
+            .ValidateOnStart();
+        services.AddSingleton(provider =>
+        {
+            var icons = provider.GetRequiredService<IOptions<SkillIconOptions>>().Value;
+            var bucket = configuration[$"{SupabaseStorageOptions.SectionName}:Buckets:SkillIcons"]
+                ?? "skill-icons";
+            var storageUrl = configuration[$"{SupabaseStorageOptions.SectionName}:Url"];
+            var storageHost = Uri.TryCreate(storageUrl, UriKind.Absolute, out var parsedStorageUrl)
+                ? parsedStorageUrl.Host
+                : null;
+            return new SkillIconSettings(
+                bucket,
+                icons.MaxFileSize,
+                icons.AllowedExternalHosts.ToHashSet(StringComparer.OrdinalIgnoreCase),
+                storageHost);
         });
 
         services.AddControllers()
@@ -210,7 +232,22 @@ public static class ServiceCollectionExtensions
                 tags: ["ready", "supabase"]);
         }
         services.AddEndpointsApiExplorer();
-        services.AddSwaggerGen();
+        services.AddSwaggerGen(options =>
+        {
+            const string bearerScheme = "Bearer";
+            options.AddSecurityDefinition(bearerScheme, new OpenApiSecurityScheme
+            {
+                Type = SecuritySchemeType.Http,
+                Scheme = "bearer",
+                BearerFormat = "JWT",
+                Description = "Enter the access token returned by POST /api/v1/auth/login.",
+            });
+            options.AddSecurityRequirement(document => new OpenApiSecurityRequirement
+            {
+                [new OpenApiSecuritySchemeReference(bearerScheme, document)] = [],
+            });
+            options.OperationFilter<AllowAnonymousOperationFilter>();
+        });
         return services;
     }
 

@@ -19,4 +19,5 @@ public enum FileKind
     Jpeg,
     WebP,
     Pdf,
+    Svg,
 }

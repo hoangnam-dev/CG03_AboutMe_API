@@ -61,7 +61,9 @@ internal sealed class TechnologyConfiguration : IEntityTypeConfiguration<Technol
         builder.Property(x => x.YearsOfExperience).HasColumnName("years_of_experience").HasPrecision(4, 1);
         builder.Property(x => x.IconType).HasColumnName("icon_type").HasMaxLength(20).HasConversion(
             value => value.ToString().ToLowerInvariant(),
-            value => Enum.Parse<SkillIconType>(value, true)).HasDefaultValue(SkillIconType.Text);
+            value => Enum.Parse<SkillIconType>(value, true))
+            .HasDefaultValue(SkillIconType.Text)
+            .HasSentinel((SkillIconType)(-1));
         builder.Property(x => x.IconValue).HasColumnName("icon_value").HasMaxLength(500).IsRequired();
         builder.Property(x => x.DisplayOrder).HasColumnName("display_order").HasDefaultValue(0);
         builder.Property(x => x.IsPublished).HasColumnName("is_published").HasDefaultValue(false);

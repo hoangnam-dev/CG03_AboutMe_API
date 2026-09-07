@@ -22,6 +22,7 @@ Its purpose is regression prevention, not incident narration.
 | BUG-2026-001 | Resolved | Testing | Shared | WebApplicationFactory inherited developer service configuration | `webapplicationfactory`, `configuration`, `test-isolation`, `secrets` |
 | BUG-2026-002 | Resolved | EF Core | Shared | Migration command loaded stale build output | `ef-core`, `migration`, `no-build`, `git-safety` |
 | BUG-2026-003 | Resolved | Auth | Shared | Case-sensitive auth path check allowed Origin bypass | `csrf`, `origin`, `routing`, `case-sensitivity` |
+| BUG-2026-004 | Resolved | EF Core | Skills | CLR-default enum was replaced by a database default | `ef-core`, `enum`, `sentinel`, `database-default`, `postgresql` |
 
 ---
 
@@ -166,6 +167,55 @@ Security middleware path matching must be at least as permissive as endpoint rou
 
 - `src/Portfolio.Api/Authentication/AuthOriginValidationMiddleware.cs`
 - `tests/Portfolio.IntegrationTests/Api/AuthApiTests.cs`
+
+### Related lessons
+
+- None.
+
+---
+
+## BUG-2026-004 — CLR-default enum was replaced by a database default
+
+- **Status:** Resolved
+- **Area:** EF Core
+- **Feature:** Skills
+- **First observed:** 2026-09-07
+- **Last updated:** 2026-09-07
+- **Tags:** `ef-core`, `enum`, `sentinel`, `database-default`, `postgresql`
+
+### Symptom
+
+Saving a new Lucide skill failed PostgreSQL check constraint `ck_technologies_icon_value`; the value `database` was validated as though its icon type were `text`.
+
+### Root cause
+
+`SkillIconType.Lucide` has CLR enum value `0`. EF Core used the CLR default as the sentinel for the store-generated `icon_type` property, omitted the explicitly selected Lucide value on INSERT, and PostgreSQL applied the column default `text`.
+
+### Why it happened
+
+The EF mapping declared a database default without assigning a sentinel outside the valid domain enum values.
+
+### Correct fix
+
+Keep the database default and configure EF with `(SkillIconType)(-1)` as its sentinel so every valid icon type, including enum value `0`, is sent explicitly.
+
+### Prevention rule
+
+When an EF property has a database default and CLR default is a valid explicit domain value, configure a sentinel outside the valid domain or prove with a persistence test that EF sends the CLR-default value.
+
+### Regression test
+
+`tests/Portfolio.IntegrationTests/Persistence/SkillRepositoryTests.cs` — `PersistsLucideInsteadOfApplyingTextDatabaseDefault`.
+
+### Verification
+
+- The focused PostgreSQL test failed with constraint `ck_technologies_icon_value` before the fix and passed after the sentinel was configured.
+- `dotnet test Portfolio.sln --configuration Release --no-build` with Docker API 1.43 — 188 passed, 0 failed.
+
+### Relevant files
+
+- `src/Portfolio.Infrastructure/Persistence/Configurations/SkillConfigurations.cs`
+- `tests/Portfolio.IntegrationTests/Persistence/SkillRepositoryTests.cs`
 
 ### Related lessons
 
