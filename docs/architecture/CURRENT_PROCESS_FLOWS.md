@@ -4,7 +4,7 @@
 
 ## 1. Phạm vi
 
-Tài liệu này mô tả hành vi runtime đã được triển khai đến hết Sprint 6; các kiểm thử PostgreSQL cần Docker đang chạy:
+Tài liệu này mô tả hành vi runtime đã được triển khai đến hết Sprint 7; các kiểm thử PostgreSQL cần Docker đang chạy:
 
 - thiết lập local, migration và bootstrap tài khoản Administrator;
 - đăng nhập Administrator và phát hành JWT;
@@ -18,18 +18,19 @@ Tài liệu này mô tả hành vi runtime đã được triển khai đến h�
 - đọc/quản trị Work Experience, Translation, Highlight, Technology link và sắp thứ tự;
 - đọc/quản trị Project, Translation, Highlight, Technology link, disclosure, gallery và sắp thứ tự;
 - đọc/quản trị Certificate, Translation, Technology link, quyền hiển thị credential và minh chứng riêng tư;
+- upload/quản trị Resume version, chuyển bản current và cung cấp CV hiện hành bằng signed URL;
 - xử lý lỗi tập trung và ranh giới dữ liệu nhạy cảm.
 
 Nguồn đối chiếu:
 
 - `scripts/Setup-Local.ps1`;
 - `src/Portfolio.Api/Program.cs` và các Controller;
-- `src/Portfolio.Application/Authentication`, `Dashboard`, `Profiles`, `About`, `Skills`, `Experiences`, `Projects`, `Certificates`;
+- `src/Portfolio.Application/Authentication`, `Dashboard`, `Profiles`, `About`, `Skills`, `Experiences`, `Projects`, `Certificates`, `Resumes`;
 - `src/Portfolio.Infrastructure/Authentication`, `Persistence`, `Storage`;
 - `tests/Portfolio.UnitTests` và `tests/Portfolio.IntegrationTests`;
 - `docs/api/API_CONTRACT.md` và `docs/STORAGE.md`.
 
-Các phần Resumes và Contacts có hợp đồng trong `API_CONTRACT.md` nhưng chưa thuộc runtime đã hoàn thành đến hết Sprint 6, vì vậy chưa được mô tả như chức năng đã hoàn thành ở đây.
+Phần Contacts có hợp đồng trong `API_CONTRACT.md` nhưng chưa thuộc runtime đã hoàn thành đến hết Sprint 7, vì vậy chưa được mô tả như chức năng đã hoàn thành ở đây.
 
 ## 2. Data Flow Diagram — mức hệ thống
 
@@ -67,7 +68,7 @@ flowchart LR
     App --> Repo
     Repo -->|EF Core queries and writes| Portfolio
     App --> StorageAdapter
-    StorageAdapter -->|server-authorized upload and delete| Objects
+    StorageAdapter -->|server-authorized upload, delete and signed read| Objects
 
     App -->|resource IDs and operation events| Logs
     API --> ErrorHandler
@@ -82,7 +83,7 @@ flowchart LR
 
 | Ranh giới | Dữ liệu được phép đi qua | Dữ liệu không được trả/log |
 | --- | --- | --- |
-| Public API | Published content, đúng locale, contact fields được cho phép, Project fields theo disclosure level | Draft, locale khác, hidden email/phone, limited Project fields, object key, secret |
+| Public API | Published content, đúng locale, Project fields theo disclosure level, signed URL 5 phút của CV Published và Active | Draft, locale khác, hidden email/phone, limited Project fields, object key, secret |
 | Admin API | DTO quản trị sau khi JWT có role `Admin` được xác thực | Password, signing key, Storage service-role key |
 | PostgreSQL | Entity và object key bền vững | Signed URL tạm thời |
 | Supabase Storage | Bucket, server-generated object key, file bytes | Client-supplied storage path |
@@ -1020,7 +1021,198 @@ sequenceDiagram
 
 Mặc định mỗi request nhận tối đa 10 file và cấu hình bị chặn ở khoảng 1–20. Tất cả file được validate trước lần upload đầu tiên. Nếu một upload ở giữa batch hoặc DB commit thất bại, service cố gắng xóa toàn bộ object mới của request bằng cancellation token độc lập để client cancellation không bỏ dở compensation.
 
-## 22. Xử lý lỗi tập trung
+## 22. Đọc Public CV hiện hành
+
+Endpoint: `GET /api/v1/portfolio/{slug}/cv/current?language=en`
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Client as Public client
+    participant Controller as ResumesController
+    participant Service as ResumeService
+    participant Repo as ResumeRepository
+    participant DB as PostgreSQL
+    participant Storage as IFileStorage
+
+    Client->>Controller: GET với slug và language bắt buộc
+    Controller->>Service: GetPublicCurrentAsync(slug, language)
+    Service->>Service: Normalize slug và validate language đúng en hoặc vi
+    alt Slug hoặc language không hợp lệ
+        Service-->>Client: 400 Problem Details
+    else Input hợp lệ
+        Service->>Repo: GetPublicCurrentAsync(normalizedSlug, language)
+        Repo->>DB: Kiểm tra Profile slug và query Resume Published, Active, đúng language
+        DB-->>Repo: Public projection hoặc null
+        alt Không có Portfolio hoặc CV Published và Active
+            Repo-->>Service: null
+            Service-->>Client: 404 Problem Details
+        else Tìm thấy CV hiện hành
+            Repo-->>Service: Metadata, requested-language description và private object key
+            Service->>Storage: CreateSignedReadUrlAsync với lifetime 5 phút
+            alt Storage provider không khả dụng
+                Storage-->>Service: ServiceUnavailableException
+                Service-->>Client: 503 Problem Details
+            else Ký URL thành công
+                Storage-->>Service: Signed URL
+                Service->>Service: Format version v{year}_{sequence:00} và tính expiresAt
+                Service-->>Controller: ResumePublicResponse không có object key
+                Controller-->>Client: 200 ApiResponse
+            end
+        end
+    end
+```
+
+`language` không có giá trị mặc định ở endpoint này. Response chỉ được tạo từ Resume vừa `IsPublished=true` vừa `IsActive=true`; signed URL hết hạn sau 5 phút và không được lưu vào PostgreSQL.
+
+## 23. Upload Resume version và cấp version transaction-safe
+
+Endpoint: `POST /api/v1/admin/cv`
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Admin as Administrator
+    participant Auth as JWT middleware and AdminPolicy
+    participant Controller as AdminResumesController
+    participant Service as ResumeService
+    participant Storage as IFileStorage
+    participant Repo as ResumeRepository
+    participant DB as PostgreSQL
+    participant Log as Structured log
+
+    Admin->>Auth: Multipart request với Bearer JWT
+    Auth->>Controller: Authorized request
+    Controller->>Controller: Inspect forbidden version fields
+    alt Client gửi version, versionYear hoặc versionSequence
+        Controller-->>Admin: 400 Problem Details
+    else Version fields vắng mặt
+        Controller->>Service: UploadAsync(file, language, descriptions, flags)
+        Service->>Service: Validate en hoặc vi, description length và active requires published
+        Service->>Service: Validate non-empty PDF size, extension, MIME và signature
+        alt Validation thất bại
+            Service-->>Admin: 400 hoặc 413 Problem Details
+        else File hợp lệ
+            Service->>Service: Tạo Resume ID và object key resumes/{id}/{uuid}.pdf
+            Service->>Storage: Upload object vào private cv-files bucket
+            alt Storage upload thất bại
+                Storage-->>Service: Storage application exception
+                Service-->>Admin: 409, 413 hoặc 503 Problem Details
+            else Storage upload thành công
+                Storage-->>Service: Stored object identity
+                Service->>Service: Lấy version year theo Asia/Ho_Chi_Minh
+                Service->>Repo: CreateVersionAsync(resume, versionYear)
+                Repo->>DB: Begin transaction
+                Repo->>DB: INSERT counter ON CONFLICT DO UPDATE RETURNING sequence
+                opt Upload yêu cầu IsActive=true
+                    Repo->>DB: Deactivate Resume current cũ cùng language
+                end
+                Repo->>DB: Insert Resume metadata và en/vi translation rows
+                alt Persistence thất bại
+                    Repo->>DB: Rollback counter, metadata và active switch
+                    Repo-->>Service: Preserve persistence exception
+                    Service->>Storage: Best-effort delete object mới với independent token
+                    opt Compensation delete thất bại
+                        Service->>Log: Log reconciliation-required với bucket và object key
+                    end
+                    Service-->>Admin: Safe Problem Details
+                else Commit thành công
+                    Repo->>DB: Commit transaction
+                    Repo-->>Service: Resume với server-generated sequence
+                    Service->>Service: Format version v{year}_{sequence:00}
+                    Service-->>Controller: ResumeAdminResponse không có object key
+                    Controller-->>Admin: 201 ApiResponse
+                end
+            end
+        end
+    end
+```
+
+Mỗi upload tạo một hàng Resume và một object mới, không có endpoint ghi đè file lịch sử. Counter độc lập theo `(language_code, version_year)`; xóa version cũ không tái sử dụng sequence và khoảng trống sequence sau commit là hợp lệ.
+
+## 24. Quản trị danh sách, publication, current và xóa Resume
+
+Endpoints:
+
+- `GET /api/v1/admin/cv?language=&page=1&pageSize=20`;
+- `PATCH /api/v1/admin/cv/{id}/current`;
+- `PATCH /api/v1/admin/cv/{id}/publish`;
+- `DELETE /api/v1/admin/cv/{id}`.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Admin as Administrator
+    participant Controller as AdminResumesController
+    participant Service as ResumeService
+    participant Repo as ResumeRepository
+    participant DB as PostgreSQL
+    participant Storage as IFileStorage
+    participant Log as Structured log
+
+    alt List Resume versions
+        Admin->>Controller: GET optional language và pagination
+        Controller->>Service: GetResumesAsync(query)
+        Service->>Service: Validate language, page và pageSize
+        Service->>Repo: GetResumesAsync(query)
+        Repo->>DB: AsNoTracking query ordered by language, year desc, sequence desc
+        Repo-->>Service: Entity page với translations
+        Service-->>Admin: 200 paged admin DTOs không có object key
+    else Set current
+        Admin->>Controller: PATCH current với isCurrent=true
+        Controller->>Service: SetCurrentAsync(id, request)
+        alt isCurrent=false
+            Service-->>Admin: 400 Problem Details
+        else isCurrent=true
+            Service->>Repo: SetCurrentAsync(id, updatedAt)
+            Repo->>DB: Begin transaction và load target
+            alt Target không tồn tại
+                Repo-->>Service: NotFound
+                Service-->>Admin: 404 Problem Details
+            else Target chưa Published
+                Repo-->>Service: NotPublished
+                Service-->>Admin: 400 Problem Details
+            else Target Published
+                Repo->>DB: Deactivate current cũ rồi activate target trong cùng transaction
+                Repo->>DB: Commit transaction
+                Service-->>Admin: 200 ResumeAdminResponse, version không đổi
+            end
+        end
+    else Change publication
+        Admin->>Controller: PATCH publish với isPublished
+        Controller->>Service: SetPublishedAsync(id, request)
+        Service->>Repo: Get tracked Resume
+        alt Unpublish Resume đang Active
+            Service-->>Admin: 409 Problem Details
+        else State hợp lệ
+            Service->>Repo: SaveChangesAsync()
+            Repo->>DB: Update is_published, không cấp version mới
+            Service-->>Admin: 200 ResumeAdminResponse
+        end
+    else Delete version
+        Admin->>Controller: DELETE Resume ID
+        Controller->>Service: DeleteAsync(id)
+        Service->>Repo: Get tracked Resume
+        alt Resume không tồn tại
+            Service-->>Admin: 404 Problem Details
+        else Resume đang Active
+            Service-->>Admin: 409 Problem Details
+        else Resume không Active
+            Service->>Repo: Remove và SaveChangesAsync()
+            Repo->>DB: Commit metadata delete và translation cascade
+            Service->>Storage: DeleteIfExistsAsync sau commit
+            opt Storage cleanup thất bại
+                Service->>Log: Log reconciliation-required, không rollback metadata
+            end
+            Service-->>Controller: Completed
+            Controller-->>Admin: 204 No Content
+        end
+    end
+```
+
+Toàn bộ endpoint `/api/v1/admin/cv` yêu cầu `AdminPolicy`: thiếu hoặc JWT không hợp lệ trả 401, còn tài khoản không có role Admin trả 403 trước khi vào Controller. Đổi publication hoặc current không tạo version mới. Partial unique index `ux_resumes_one_active_per_language` bảo vệ invariant tối đa một Resume Active cho mỗi ngôn ngữ ở database; application rule bổ sung rằng Resume Active phải Published.
+
+## 25. Xử lý lỗi tập trung
 
 ```mermaid
 flowchart LR
@@ -1044,7 +1236,7 @@ flowchart LR
 
 Chỉ validation error có `errors` theo field. Mọi Problem Details có `requestId`. Unexpected exception được log server-side nhưng response không chứa stack trace, SQL/provider detail hoặc secret.
 
-## 23. Ma trận endpoint và data store
+## 26. Ma trận endpoint và data store
 
 | Endpoint | Quyền | Service | Data store/adapter chính | Public disclosure |
 | --- | --- | --- | --- | --- |
@@ -1102,8 +1294,14 @@ Chỉ validation error có `errors` theo field. Mọi Problem Details có `reque
 | `PUT /api/v1/admin/certificates/{id}` | Admin | `CertificateService` | PostgreSQL | Full mutable aggregate replacement; publish yêu cầu `en` và `vi` |
 | `DELETE /api/v1/admin/certificates/{id}` | Admin | `CertificateService` | PostgreSQL + Supabase Storage | Commit metadata trước, xóa cả file/image object sau commit |
 | `POST /api/v1/admin/certificates/{id}/file` | Admin | `CertificateService` | PostgreSQL + Supabase Storage | PNG/JPEG/WebP thay image slot; PDF thay file slot; compensation khi persist lỗi |
+| `GET /api/v1/portfolio/{slug}/cv/current` | Anonymous | `ResumeService` | PostgreSQL + private Storage signed URL | Chỉ Resume Published và Active đúng language; signed URL 5 phút, không trả object key |
+| `GET /api/v1/admin/cv` | Admin | `ResumeService` | PostgreSQL | Optional language filter, pagination; order theo language, year desc, sequence desc |
+| `POST /api/v1/admin/cv` | Admin | `ResumeService` | PostgreSQL transaction + private Supabase Storage | PDF-only; server cấp version; compensation object mới khi transaction lỗi |
+| `PATCH /api/v1/admin/cv/{id}/current` | Admin | `ResumeService` | PostgreSQL transaction | Chỉ nhận `isCurrent=true`; target phải Published; active switch atomic, không tăng version |
+| `PATCH /api/v1/admin/cv/{id}/publish` | Admin | `ResumeService` | PostgreSQL | Không cho unpublish Resume Active; metadata update không tăng version |
+| `DELETE /api/v1/admin/cv/{id}` | Admin | `ResumeService` | PostgreSQL + private Supabase Storage | 409 khi Active; commit metadata trước rồi cleanup object |
 
-## 24. Điểm cần lưu ý khi vận hành
+## 27. Điểm cần lưu ý khi vận hành
 
 - Swagger phản ánh endpoint thực tế và chỉ bật trong Development tại `/swagger`.
 - `docs/api/API_CONTRACT.md` là hợp đồng cho toàn MVP, bao gồm cả endpoint của sprint tương lai; không dùng riêng file đó để suy luận rằng mọi endpoint đã được triển khai.
@@ -1111,9 +1309,11 @@ Chỉ validation error có `errors` theo field. Mọi Problem Details có `reque
 - Các cột database `profiles.avatar_url` và `profiles.hero_image_url` hiện lưu object key theo Storage contract; public URL được tạo khi map response.
 - Các cột `project_images.image_url` và `projects.thumbnail_url` lưu object key; public/admin DTO tạo public URL bằng bucket `project-images`.
 - Public Project `limited` không trả repository/demo URL, gallery, client context, problem, solution hoặc result; không được bổ sung frontend fallback làm lộ các trường này.
+- Resume object luôn nằm trong private bucket `cv-files`; chỉ public signed URL 5 phút được trả cho Resume Published và Active.
+- Resume version dùng năm tại `Asia/Ho_Chi_Minh` và counter độc lập theo language/year; sequence đã commit không được tái sử dụng sau khi xóa.
 - PostgreSQL integration tests cần Docker và image `postgres:17-alpine`.
 
-## 25. Cổng hoàn thành sprint và quy tắc đồng bộ tài liệu
+## 28. Cổng hoàn thành sprint và quy tắc đồng bộ tài liệu
 
 Một sprint backend chỉ được xem là **hoàn thành** khi đồng thời đáp ứng tất cả điều kiện sau:
 

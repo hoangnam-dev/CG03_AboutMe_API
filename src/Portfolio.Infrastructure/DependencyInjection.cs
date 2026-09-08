@@ -12,6 +12,7 @@ using Portfolio.Application.Dashboard;
 using Portfolio.Application.Experiences;
 using Portfolio.Application.Profiles;
 using Portfolio.Application.Projects;
+using Portfolio.Application.Resumes;
 using Portfolio.Application.Skills;
 using Portfolio.Infrastructure.Authentication;
 using Portfolio.Infrastructure.Availability;
@@ -129,6 +130,7 @@ public static class DependencyInjection
             services.AddScoped<ICertificateRepository, CertificateRepository>();
             services.AddScoped<IExperienceRepository, ExperienceRepository>();
             services.AddScoped<IProjectRepository, ProjectRepository>();
+            services.AddScoped<IResumeRepository, ResumeRepository>();
             services.AddScoped<ISkillRepository, SkillRepository>();
             services.AddScoped<AdminBootstrapper>();
         }
@@ -143,6 +145,7 @@ public static class DependencyInjection
             services.AddScoped<ICertificateRepository, DatabaseUnavailableCertificateRepository>();
             services.AddScoped<IExperienceRepository, DatabaseUnavailableExperienceRepository>();
             services.AddScoped<IProjectRepository, DatabaseUnavailableProjectRepository>();
+            services.AddScoped<IResumeRepository, DatabaseUnavailableResumeRepository>();
             services.AddScoped<ISkillRepository, DatabaseUnavailableSkillRepository>();
         }
 

@@ -483,6 +483,54 @@ When one upload endpoint dispatches to multiple storage-backed columns by conten
 
 ---
 
+## BUG-2026-010 — Synchronous barrier blocked async concurrency test construction
+
+- **Status:** Resolved
+- **Area:** Testing | PostgreSQL
+- **Feature:** Resumes
+- **First observed:** 2026-09-08
+- **Last updated:** 2026-09-08
+- **Tags:** `concurrency-test`, `async-deadlock`, `testcontainers`
+
+### Symptom
+
+The Resume counter concurrency test started but never reached PostgreSQL or completed.
+
+### Root cause
+
+`Barrier.SignalAndWait` ran synchronously inside an `async` LINQ selector before the task sequence finished enumerating. The first selector invocation blocked while later participants had not yet been constructed.
+
+### Why it happened
+
+The test assumed invoking an `async` lambda immediately scheduled its whole body independently. In reality, it executes synchronously until its first incomplete `await`.
+
+### Correct fix
+
+Create every task behind an incomplete `TaskCompletionSource`, materialize the task array, and then release the asynchronous start gate.
+
+### Prevention rule
+
+Concurrency tests must use an asynchronous start gate and materialize all participants before releasing it; never place a synchronous blocking barrier before the first incomplete `await` during task construction.
+
+### Regression test
+
+`tests/Portfolio.IntegrationTests/Persistence/ResumeRepositoryTests.cs` — `ConcurrentUploadsAllocateUniqueMonotonicSequences`.
+
+### Verification
+
+- Focused Resume repository tests passed: 5 succeeded, 0 failed.
+- Full solution tests passed: 288 succeeded, 0 failed.
+
+### Relevant files
+
+- `tests/Portfolio.IntegrationTests/Persistence/ResumeRepositoryTests.cs`
+
+### Related lessons
+
+- None.
+
+---
+
 ## Entry template
 
 <!--

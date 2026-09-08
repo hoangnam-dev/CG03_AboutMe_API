@@ -37,6 +37,12 @@ Certificate evidence uploads accept one PNG, JPEG, WebP, or PDF file up to `Uplo
 
 Deleting a Certificate commits the metadata cascade before deleting both private objects. A failed metadata update compensates the newly uploaded object, and the previous object is deleted only after the replacement key commits.
 
+Resume uploads accept one PDF up to `Upload__MaxFileSize` (10 MiB by default, capped at 25 MiB). The extension, declared `application/pdf` MIME type, and `%PDF-` signature must agree. Generated keys use `resumes/{resumeId}/{uuid}.pdf` in the private `SupabaseStorage__Buckets__CvFiles` bucket; the client filename is retained only as sanitized display metadata.
+
+Each successful upload creates a new immutable Resume row. The API derives the allocation year in `Asia/Ho_Chi_Minh`, atomically increments the counter for that language and year with PostgreSQL `INSERT ... ON CONFLICT ... DO UPDATE ... RETURNING`, inserts metadata, and optionally switches the active Resume in the same transaction. Display versions are computed as `v{year}_{sequence:00}` and are never accepted from clients. Deleted versions leave intentional sequence gaps.
+
+If metadata persistence fails after a Resume object upload, the API attempts to delete the new object and leaves the previous active Resume unchanged. A non-active Resume deletion commits metadata before private-object cleanup. Active Resumes cannot be deleted or unpublished until another published version is selected. Public current-CV responses require a published active Resume and create a five-minute signed URL at response time; object keys and signed URLs are never persisted or logged.
+
 ## Replacement lifecycle
 
 The required order is:

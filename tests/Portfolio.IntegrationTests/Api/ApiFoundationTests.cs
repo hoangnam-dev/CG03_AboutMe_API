@@ -149,6 +149,8 @@ public sealed class ApiFoundationTests : IClassFixture<PortfolioApiFactory>
             ["PATCH /api/v1/admin/projects/reorder"] = ["items"],
             ["POST /api/v1/admin/certificates"] = ["issuer", "issuedDate", "expirationDate", "credentialId", "showCredentialId", "credentialUrl", "displayOrder", "isPublished", "translations", "technologyIds"],
             ["PUT /api/v1/admin/certificates/{id}"] = ["issuer", "issuedDate", "expirationDate", "credentialId", "showCredentialId", "credentialUrl", "displayOrder", "isPublished", "translations", "technologyIds"],
+            ["PATCH /api/v1/admin/cv/{id}/current"] = ["isCurrent"],
+            ["PATCH /api/v1/admin/cv/{id}/publish"] = ["isPublished"],
         };
         var json = await _client.GetStringAsync(
             "/swagger/v1/swagger.json", TestContext.Current.CancellationToken);
