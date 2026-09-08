@@ -428,6 +428,57 @@ Whenever a request uses a dictionary whose keys are restricted by business rules
 
 ---
 
+## BUG-2026-009 — Certificate upload replaced the wrong evidence slot
+
+- **Status:** Resolved
+- **Area:** Application | Storage
+- **Feature:** Certificates
+- **First observed:** 2026-09-08
+- **Last updated:** 2026-09-08
+- **Tags:** `file-replacement`, `object-storage`, `partial-failure`, `contract-mapping`
+
+### Symptom
+
+Uploading a PDF certificate evidence file cleared and deleted an existing certificate image, even though the schema and API contract expose independent file and image fields.
+
+### Root cause
+
+The replacement flow treated `certificates.file_url` and `certificates.image_url` as two representations of one storage slot instead of two independent slots selected by validated content type.
+
+### Why it happened
+
+The singular upload route was mistaken for singular persisted evidence. The content-type rule that updates the appropriate field was not carried through to old-object selection and cleanup.
+
+### Correct fix
+
+PDF uploads replace only `file_url`; PNG/JPEG/WebP uploads replace only `image_url`. Persist the selected new key before deleting only the previous object from that same slot, and sign both retained slots independently in read responses.
+
+### Prevention rule
+
+When one upload endpoint dispatches to multiple storage-backed columns by content type, replace and clean up only the selected column; never clear sibling storage slots unless the contract explicitly defines mutual exclusion.
+
+### Regression test
+
+`tests/Portfolio.UnitTests/Certificates/CertificateServiceTests.cs` — `UploadingPdfPreservesExistingImageEvidence` and `AdminResponseSignsFileAndImageEvidenceIndependently`.
+
+### Verification
+
+- Certificate service tests passed: 9 succeeded, 0 failed.
+- Certificate API tests passed: 7 succeeded, 0 failed.
+- Release build passed with 0 warnings and 0 errors.
+
+### Relevant files
+
+- `src/Portfolio.Application/Certificates/CertificateService.cs`
+- `src/Portfolio.Application/Certificates/CertificateContracts.cs`
+- `tests/Portfolio.UnitTests/Certificates/CertificateServiceTests.cs`
+
+### Related lessons
+
+- None.
+
+---
+
 ## Entry template
 
 <!--
