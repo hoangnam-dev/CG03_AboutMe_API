@@ -3,6 +3,7 @@ using Portfolio.Application.About;
 using Portfolio.Application.Authentication;
 using Portfolio.Application.Certificates;
 using Portfolio.Application.Common.Storage;
+using Portfolio.Application.Contacts;
 using Portfolio.Application.Dashboard;
 using Portfolio.Application.Experiences;
 using Portfolio.Application.Profiles;
@@ -18,6 +19,7 @@ public static class DependencyInjection
     {
         services.AddScoped<IAuthService, AuthService>();
         services.AddScoped<ICertificateService, CertificateService>();
+        services.AddScoped<IContactService, ContactService>();
         services.AddScoped<IDashboardService, DashboardService>();
         services.AddScoped<IProfileService, ProfileService>();
         services.AddScoped<IAboutService, AboutService>();

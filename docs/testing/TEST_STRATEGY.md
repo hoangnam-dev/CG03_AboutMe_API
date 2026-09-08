@@ -145,6 +145,8 @@ ContactPrivacyTests.PublicCallerCannotReadInbox
 ContactLogTests.BodyEmailAndRawIpAreAbsentFromLogs
 ```
 
+Sprint 8 evidence also covers a 65,536-byte body limit, untrusted `X-Forwarded-For` spoofing against one connection partition, required status input, JSON status casing, PostgreSQL status constraints, stable newest-first pagination, and dashboard unread-count consistency.
+
 ## 5. Per-change TDD loop
 
 1. Add one test that states one contract/business rule.

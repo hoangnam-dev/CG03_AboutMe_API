@@ -1,7 +1,9 @@
 using System.Text.Json;
+using System.Text.Json.Serialization;
 
 namespace Portfolio.Application.Common.Models;
 
+[JsonConverter(typeof(JsonStringEnumConverter<ContactStatus>))]
 public enum ContactStatus
 {
     New,

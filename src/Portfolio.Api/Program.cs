@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Portfolio.Api.Authentication;
 using Portfolio.Api.Extensions;
 using Portfolio.Api.Health;
+using Portfolio.Api.Middleware;
 using Portfolio.Application;
 using Portfolio.Infrastructure;
 using Portfolio.Infrastructure.Authentication;
@@ -40,6 +41,7 @@ app.UseMiddleware<AuthOriginValidationMiddleware>();
 app.UseAuthentication();
 app.UseAuthorization();
 app.UseRateLimiter();
+app.UseMiddleware<ContactRequestSizeMiddleware>();
 
 if (app.Environment.IsDevelopment())
 {

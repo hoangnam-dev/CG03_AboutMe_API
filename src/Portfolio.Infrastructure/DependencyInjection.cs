@@ -8,6 +8,7 @@ using Portfolio.Application.Authentication;
 using Portfolio.Application.Certificates;
 using Portfolio.Application.Common.Authentication;
 using Portfolio.Application.Common.Storage;
+using Portfolio.Application.Contacts;
 using Portfolio.Application.Dashboard;
 using Portfolio.Application.Experiences;
 using Portfolio.Application.Profiles;
@@ -17,6 +18,7 @@ using Portfolio.Application.Skills;
 using Portfolio.Infrastructure.Authentication;
 using Portfolio.Infrastructure.Availability;
 using Portfolio.Infrastructure.Configuration;
+using Portfolio.Infrastructure.Notifications;
 using Portfolio.Infrastructure.Persistence;
 using Portfolio.Infrastructure.Persistence.Repositories;
 using Portfolio.Infrastructure.Storage;
@@ -75,6 +77,7 @@ public static class DependencyInjection
         services.AddSingleton<IRefreshTokenProtector, RefreshTokenProtector>();
         services.AddSingleton<ICsrfTokenService, SessionCsrfTokenService>();
         services.AddSingleton<IAuthSessionLifetime, AuthSessionLifetime>();
+        services.AddSingleton<IContactNotifier, LoggingContactNotifier>();
 
         services.AddSingleton<IValidateOptions<BootstrapAdminOptions>, BootstrapAdminOptionsValidator>();
         services.AddOptions<BootstrapAdminOptions>()
@@ -128,6 +131,7 @@ public static class DependencyInjection
             services.AddScoped<IProfileRepository, ProfileRepository>();
             services.AddScoped<IAboutRepository, AboutRepository>();
             services.AddScoped<ICertificateRepository, CertificateRepository>();
+            services.AddScoped<IContactRepository, ContactRepository>();
             services.AddScoped<IExperienceRepository, ExperienceRepository>();
             services.AddScoped<IProjectRepository, ProjectRepository>();
             services.AddScoped<IResumeRepository, ResumeRepository>();
@@ -143,6 +147,7 @@ public static class DependencyInjection
             services.AddScoped<IProfileRepository, DatabaseUnavailableProfileRepository>();
             services.AddScoped<IAboutRepository, DatabaseUnavailableAboutRepository>();
             services.AddScoped<ICertificateRepository, DatabaseUnavailableCertificateRepository>();
+            services.AddScoped<IContactRepository, DatabaseUnavailableContactRepository>();
             services.AddScoped<IExperienceRepository, DatabaseUnavailableExperienceRepository>();
             services.AddScoped<IProjectRepository, DatabaseUnavailableProjectRepository>();
             services.AddScoped<IResumeRepository, DatabaseUnavailableResumeRepository>();

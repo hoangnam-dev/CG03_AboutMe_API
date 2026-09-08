@@ -3,6 +3,7 @@ using Microsoft.OpenApi;
 using Portfolio.Application.About;
 using Portfolio.Application.Authentication;
 using Portfolio.Application.Certificates;
+using Portfolio.Application.Contacts;
 using Portfolio.Application.Experiences;
 using Portfolio.Application.Profiles;
 using Portfolio.Application.Projects;
@@ -233,6 +234,20 @@ public sealed class RequestExampleOperationFilter : IOperationFilter
         _ when requestType == typeof(ResumePublishRequest) => Parse(
             """
             { "isPublished": true }
+            """),
+        _ when requestType == typeof(ContactCreateRequest) => Parse(
+            """
+            {
+              "senderName": "Fictional Visitor",
+              "senderEmail": "visitor@example.com",
+              "subject": "Project inquiry",
+              "message": "Plain text message.",
+              "website": ""
+            }
+            """),
+        _ when requestType == typeof(ContactStatusRequest) => Parse(
+            """
+            { "status": "Read" }
             """),
         _ => null,
     };

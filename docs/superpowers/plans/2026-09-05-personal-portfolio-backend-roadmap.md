@@ -860,12 +860,12 @@ Public contact submission, abuse controls, notification side effect, admin inbox
 
 ### Tasks
 
-- [ ] Write validation, honeypot, rate-limit, persistence, notification-failure, status-transition, pagination, and authorization tests first.
-- [ ] Define `IContactRepository`, `IContactService`, `IContactNotifier`, request/response DTOs, and named `ContactSubmission` rate-limit policy.
-- [ ] Partition limits by trusted normalized remote IP or a privacy-preserving hash; never use arbitrary client headers unless forwarded-header trust is configured.
-- [ ] Persist before invoking `IContactNotifier`; log notification failure and return successful creation once persistence commits.
-- [ ] Implement admin list/detail/status/delete and ensure public users can never enumerate messages.
-- [ ] Keep dashboard unread count consistent with `ContactStatus.New`.
+- [x] Write validation, honeypot, rate-limit, persistence, notification-failure, status-transition, pagination, and authorization tests first.
+- [x] Define `IContactRepository`, `IContactService`, `IContactNotifier`, request/response DTOs, and named `ContactSubmission` rate-limit policy.
+- [x] Partition limits by trusted normalized remote IP or a privacy-preserving hash; never use arbitrary client headers unless forwarded-header trust is configured.
+- [x] Persist before invoking `IContactNotifier`; log notification failure and return successful creation once persistence commits.
+- [x] Implement admin list/detail/status/delete and ensure public users can never enumerate messages.
+- [x] Keep dashboard unread count consistent with `ContactStatus.New`.
 
 ### API / Events
 

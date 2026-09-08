@@ -46,6 +46,10 @@ public static class ServiceCollectionExtensions
         services.AddOptions<AuthRateLimitOptions>()
             .Bind(configuration.GetSection(AuthRateLimitOptions.SectionName))
             .ValidateOnStart();
+        services.AddSingleton<IValidateOptions<ContactRateLimitOptions>, ContactRateLimitOptionsValidator>();
+        services.AddOptions<ContactRateLimitOptions>()
+            .Bind(configuration.GetSection(ContactRateLimitOptions.SectionName))
+            .ValidateOnStart();
         services.AddSingleton(provider =>
         {
             var uploads = provider.GetRequiredService<IOptions<UploadOptions>>().Value;
@@ -206,6 +210,8 @@ public static class ServiceCollectionExtensions
         {
             var configured = configuration.GetSection(AuthRateLimitOptions.SectionName)
                 .Get<AuthRateLimitOptions>() ?? new AuthRateLimitOptions();
+            var contact = configuration.GetSection(ContactRateLimitOptions.SectionName)
+                .Get<ContactRateLimitOptions>() ?? new ContactRateLimitOptions();
             options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
             options.AddPolicy("AuthLogin", context => CreateIpPartition(
                 context,
@@ -215,6 +221,10 @@ public static class ServiceCollectionExtensions
                 context,
                 configured.RefreshPermitLimit,
                 configured.WindowSeconds));
+            options.AddPolicy("ContactSubmission", context => CreateIpPartition(
+                context,
+                contact.PermitLimit,
+                contact.WindowSeconds));
             options.OnRejected = async (context, cancellationToken) =>
             {
                 if (context.Lease.TryGetMetadata(MetadataName.RetryAfter, out var retryAfter))
@@ -227,7 +237,7 @@ public static class ServiceCollectionExtensions
                     context.HttpContext,
                     StatusCodes.Status429TooManyRequests,
                     "Too many requests",
-                    "Too many authentication attempts.");
+                    "Too many requests.");
             };
         });
 
@@ -291,7 +301,7 @@ public static class ServiceCollectionExtensions
         int permitLimit,
         int windowSeconds) =>
         RateLimitPartition.GetFixedWindowLimiter(
-            context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+            NormalizeRemoteIp(context),
             _ => new FixedWindowRateLimiterOptions
             {
                 PermitLimit = permitLimit,
@@ -299,6 +309,16 @@ public static class ServiceCollectionExtensions
                 QueueLimit = 0,
                 AutoReplenishment = true,
             });
+
+    private static string NormalizeRemoteIp(HttpContext context)
+    {
+        var address = context.Connection.RemoteIpAddress;
+        if (address is null)
+            return "unknown";
+        return address.IsIPv4MappedToIPv6
+            ? address.MapToIPv4().ToString()
+            : address.ToString();
+    }
 
     private static async Task ValidateAccessSessionAsync(TokenValidatedContext context)
     {
