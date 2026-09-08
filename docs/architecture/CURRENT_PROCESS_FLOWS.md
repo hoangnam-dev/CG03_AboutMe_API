@@ -4,7 +4,7 @@
 
 ## 1. Phạm vi
 
-Tài liệu này mô tả hành vi runtime đã được triển khai và kiểm thử đến hết Sprint 5:
+Tài liệu này mô tả hành vi runtime đã được triển khai đến hết Sprint 6; các kiểm thử PostgreSQL cần Docker đang chạy:
 
 - thiết lập local, migration và bootstrap tài khoản Administrator;
 - đăng nhập Administrator và phát hành JWT;
@@ -17,18 +17,19 @@ Tài liệu này mô tả hành vi runtime đã được triển khai và kiểm
 - đọc/quản trị Skill Category và Technology, upload icon và sắp thứ tự;
 - đọc/quản trị Work Experience, Translation, Highlight, Technology link và sắp thứ tự;
 - đọc/quản trị Project, Translation, Highlight, Technology link, disclosure, gallery và sắp thứ tự;
+- đọc/quản trị Certificate, Translation, Technology link, quyền hiển thị credential và minh chứng riêng tư;
 - xử lý lỗi tập trung và ranh giới dữ liệu nhạy cảm.
 
 Nguồn đối chiếu:
 
 - `scripts/Setup-Local.ps1`;
 - `src/Portfolio.Api/Program.cs` và các Controller;
-- `src/Portfolio.Application/Authentication`, `Dashboard`, `Profiles`, `About`, `Skills`, `Experiences`, `Projects`;
+- `src/Portfolio.Application/Authentication`, `Dashboard`, `Profiles`, `About`, `Skills`, `Experiences`, `Projects`, `Certificates`;
 - `src/Portfolio.Infrastructure/Authentication`, `Persistence`, `Storage`;
 - `tests/Portfolio.UnitTests` và `tests/Portfolio.IntegrationTests`;
 - `docs/api/API_CONTRACT.md` và `docs/STORAGE.md`.
 
-Các phần Certificates, Resumes và Contacts có hợp đồng trong `API_CONTRACT.md` nhưng chưa thuộc runtime đã hoàn thành đến hết Sprint 5, vì vậy chưa được mô tả như chức năng đã hoàn thành ở đây.
+Các phần Resumes và Contacts có hợp đồng trong `API_CONTRACT.md` nhưng chưa thuộc runtime đã hoàn thành đến hết Sprint 6, vì vậy chưa được mô tả như chức năng đã hoàn thành ở đây.
 
 ## 2. Data Flow Diagram — mức hệ thống
 
@@ -1094,6 +1095,13 @@ Chỉ validation error có `errors` theo field. Mọi Problem Details có `reque
 | `PATCH /api/v1/admin/projects/{id}/publish` | Admin | `ProjectService` | PostgreSQL | Publish yêu cầu names và toàn bộ image alt text en/vi |
 | `PATCH /api/v1/admin/projects/reorder` | Admin | `ProjectService` | PostgreSQL transaction | Atomic complete-set reorder |
 | `POST /api/v1/admin/projects/{id}/images` | Admin | `ProjectService` | PostgreSQL + Supabase Storage | Batch validation/compensation; trả public URLs, không trả object keys |
+| `GET /api/v1/portfolio/{slug}/certificates` | Anonymous | `CertificateService` | PostgreSQL + private Storage signed URL | Chỉ Published, exact locale, ẩn credential ID theo visibility flag, không trả object key |
+| `GET /api/v1/admin/certificates` | Admin | `CertificateService` | PostgreSQL + private Storage signed URL | Search/filter/pagination; full aggregate DTO và signed URLs 5 phút |
+| `POST /api/v1/admin/certificates` | Admin | `CertificateService` | PostgreSQL | Validate date, HTTPS credential URL, translation và technology links |
+| `GET /api/v1/admin/certificates/{id}` | Admin | `CertificateService` | PostgreSQL + private Storage signed URL | Full translations/technology IDs; không trả object keys |
+| `PUT /api/v1/admin/certificates/{id}` | Admin | `CertificateService` | PostgreSQL | Full mutable aggregate replacement; publish yêu cầu `en` và `vi` |
+| `DELETE /api/v1/admin/certificates/{id}` | Admin | `CertificateService` | PostgreSQL + Supabase Storage | Commit metadata trước, xóa cả file/image object sau commit |
+| `POST /api/v1/admin/certificates/{id}/file` | Admin | `CertificateService` | PostgreSQL + Supabase Storage | PNG/JPEG/WebP thay image slot; PDF thay file slot; compensation khi persist lỗi |
 
 ## 24. Điểm cần lưu ý khi vận hành
 

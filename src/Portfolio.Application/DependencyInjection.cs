@@ -1,6 +1,7 @@
 using Microsoft.Extensions.DependencyInjection;
 using Portfolio.Application.About;
 using Portfolio.Application.Authentication;
+using Portfolio.Application.Certificates;
 using Portfolio.Application.Common.Storage;
 using Portfolio.Application.Dashboard;
 using Portfolio.Application.Experiences;
@@ -15,6 +16,7 @@ public static class DependencyInjection
     public static IServiceCollection AddApplication(this IServiceCollection services)
     {
         services.AddScoped<IAuthService, AuthService>();
+        services.AddScoped<ICertificateService, CertificateService>();
         services.AddScoped<IDashboardService, DashboardService>();
         services.AddScoped<IProfileService, ProfileService>();
         services.AddScoped<IAboutService, AboutService>();

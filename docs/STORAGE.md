@@ -33,6 +33,10 @@ Project gallery uploads accept PNG, JPEG, and WebP only. Each request contains o
 
 Project write responses expose public image URLs, while the database retains object keys in `project_images.image_url` and the selected thumbnail object key in `projects.thumbnail_url`. Removing gallery metadata or deleting a Project commits the database change before attempting object deletion. A multi-file failure compensates every object uploaded by that request.
 
+Certificate evidence uploads accept one PNG, JPEG, WebP, or PDF file up to `Upload__MaxFileSize` (10 MiB by default, capped at 25 MiB). Generated keys use `certificates/{certificateId}/{uuid}.{extension}` in the private `SupabaseStorage__Buckets__CertificateFiles` bucket. PDFs replace `certificates.file_url`; images replace `certificates.image_url`, so a certificate may retain one file and one image independently. API responses convert those object keys into `downloadUrl` and `imageUrl` values that expire after five minutes; neither object keys nor signed URLs are persisted or logged.
+
+Deleting a Certificate commits the metadata cascade before deleting both private objects. A failed metadata update compensates the newly uploaded object, and the previous object is deleted only after the replacement key commits.
+
 ## Replacement lifecycle
 
 The required order is:
