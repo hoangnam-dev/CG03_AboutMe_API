@@ -109,7 +109,9 @@ Các key bắt buộc cho setup đầy đủ:
 
 ```dotenv
 ConnectionStrings__PostgreSql=Host=<host>;Port=5432;Database=postgres;Username=<username>;Password="<password>";SSL Mode=Require
-Frontend__Origin=http://localhost:3000
+Frontend__Origins__0=http://localhost:3000
+Frontend__Origins__1=https://localhost:44313
+Frontend__Origins__2=https://localhost:7097
 Jwt__Issuer=Portfolio.Api
 Jwt__Audience=Portfolio.Frontend
 Jwt__AccessTokenMinutes=10
@@ -141,6 +143,15 @@ BootstrapAdmin__Enabled=false
 BootstrapAdmin__Email=
 BootstrapAdmin__Password=
 ```
+
+`Frontend__Origins__N` là allowlist exact origin. Dùng index liên tiếp bắt đầu từ `0` và không thêm path hoặc dấu `/` cuối. Nếu sửa file `.env`, cần chạy lại setup với `-SyncUserSecrets` trước khi restart API vì `dotnet run` không tự đọc `.env`:
+
+```powershell
+.\scripts\Setup-Local.ps1 -NonInteractive -SyncUserSecrets
+dotnet run --project src\Portfolio.Api --launch-profile https
+```
+
+Nếu cấu hình trực tiếp bằng environment variables của IDE, Docker hoặc hệ điều hành thì chỉ cần restart process API.
 
 Giá trị phải là text thuần. Không dùng Markdown URL như `[https://...](https://...)` và không viết key thành `ConnectionStrings\_\_PostgreSql`.
 

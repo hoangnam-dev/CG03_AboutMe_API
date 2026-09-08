@@ -76,6 +76,35 @@ public sealed class AuthApiTests
         Assert.Equal(HttpStatusCode.Forbidden, untrustedResponse.StatusCode);
     }
 
+    [Theory]
+    [InlineData("https://portfolio.example")]
+    [InlineData("http://localhost:3000")]
+    public async Task LoginAcceptsEveryTrustedOrigin(string origin)
+    {
+        await using var factory = new AuthContractApiFactory();
+        using var client = factory.CreateClient(
+            new WebApplicationFactoryClientOptions { AllowAutoRedirect = false });
+        using var request = new HttpRequestMessage(HttpMethod.Post, "/api/v1/auth/login")
+        {
+            Content = JsonContent.Create(new
+            {
+                email = "admin@example.com",
+                password = "valid-password",
+            }),
+        };
+        request.Headers.Add("Origin", origin);
+
+        var response = await client.SendAsync(request, TestContext.Current.CancellationToken);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(
+            origin,
+            Assert.Single(response.Headers.GetValues("Access-Control-Allow-Origin")));
+        Assert.Equal(
+            "true",
+            Assert.Single(response.Headers.GetValues("Access-Control-Allow-Credentials")));
+    }
+
     [Fact]
     public async Task OriginProtectionCannotBeBypassedWithRouteCasing()
     {

@@ -114,7 +114,7 @@ All errors use:
 - Every `/api/v1/admin/**` route requires a valid bearer token with the ASP.NET Core Identity `Admin` role.
 - Access tokens are RS256 JWTs with a 10-minute default lifetime. Browser clients keep them in memory and send them with `Authorization: Bearer`.
 - Refresh tokens are opaque, rotating credentials carried only by the `__Host-refresh` HttpOnly cookie. They are never accepted in JSON request bodies.
-- Every state-changing auth request requires an exact configured `Origin`; refresh/logout/logout-all/session revoke additionally require `X-CSRF-Token`.
+- Every state-changing auth request requires an `Origin` that exactly matches one entry in `Frontend:Origins`; refresh/logout/logout-all/session revoke additionally require `X-CSRF-Token`.
 - The MVP has one Portfolio. Requests never contain `userId`, `ownerId`, or `isAdmin` authorization fields.
 - A non-admin authenticated token receives 403; missing or invalid authentication receives 401.
 
@@ -168,7 +168,7 @@ Reorder request:
 
 ### POST `/api/v1/auth/login`
 
-Anonymous. The endpoint has an IP-partitioned rate limit; ASP.NET Core Identity lockout is the account-specific credential limiter. Browser requests require the exact configured `Frontend:Origin`.
+Anonymous. The endpoint has an IP-partitioned rate limit; ASP.NET Core Identity lockout is the account-specific credential limiter. Browser requests require an exact match in the configured `Frontend:Origins` allowlist.
 
 Request:
 

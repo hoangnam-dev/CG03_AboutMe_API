@@ -1,3 +1,4 @@
+using Portfolio.Api.Configuration;
 using Portfolio.Infrastructure.Authentication;
 using Xunit;
 
@@ -5,6 +6,46 @@ namespace Portfolio.IntegrationTests.Authentication;
 
 public sealed class AuthenticationOptionsValidatorTests
 {
+    [Fact]
+    public void FrontendValidationAcceptsMultipleExactOrigins()
+    {
+        var result = new FrontendOptionsValidator().Validate(null, new FrontendOptions
+        {
+            Origins =
+            [
+                "https://localhost:44313",
+                "https://localhost:7097",
+                "http://localhost:3000",
+            ],
+        });
+
+        Assert.True(result.Succeeded, result.FailureMessage);
+    }
+
+    [Fact]
+    public void FrontendValidationRejectsEmptyAllowlist()
+    {
+        var result = new FrontendOptionsValidator().Validate(null, new FrontendOptions());
+
+        Assert.True(result.Failed);
+        Assert.Contains("at least one", result.FailureMessage, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Theory]
+    [InlineData("not-an-origin")]
+    [InlineData("ftp://localhost:3000")]
+    [InlineData("https://localhost:44313/swagger")]
+    [InlineData("https://user@localhost:44313")]
+    public void FrontendValidationRejectsInvalidOrigin(string origin)
+    {
+        var result = new FrontendOptionsValidator().Validate(null, new FrontendOptions
+        {
+            Origins = [origin],
+        });
+
+        Assert.True(result.Failed);
+    }
+
     [Fact]
     public void JwtDefaultsUseShortLivedAccessTokensAndBoundedClockSkew()
     {

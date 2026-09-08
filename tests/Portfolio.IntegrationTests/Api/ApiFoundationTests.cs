@@ -171,7 +171,8 @@ public sealed class PortfolioApiFactory : WebApplicationFactory<Program>
                     "Host=localhost;Database=portfolio_api_tests;Username=test;Password=test",
                 ["Jwt:Issuer"] = "portfolio-tests",
                 ["Jwt:Audience"] = "portfolio-client",
-                ["Frontend:Origin"] = "https://portfolio.example",
+                ["Frontend:Origins:0"] = "https://portfolio.example",
+                ["Frontend:Origins:1"] = "http://localhost:3000",
                 ["BootstrapAdmin:Enabled"] = "false",
             });
         });
@@ -237,7 +238,8 @@ public class DatabaseOptionalApiFactory : WebApplicationFactory<Program>
                 ["ConnectionStrings:PostgreSql"] = string.Empty,
                 ["Jwt:Issuer"] = "portfolio-tests",
                 ["Jwt:Audience"] = "portfolio-client",
-                ["Frontend:Origin"] = "https://portfolio.example",
+                ["Frontend:Origins:0"] = "https://portfolio.example",
+                ["Frontend:Origins:1"] = "http://localhost:3000",
                 ["BootstrapAdmin:Enabled"] = "false",
             });
         });

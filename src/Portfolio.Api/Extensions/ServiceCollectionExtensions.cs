@@ -16,6 +16,7 @@ using Portfolio.Api.Errors;
 using Portfolio.Api.OpenApi;
 using Portfolio.Application.Common.Authentication;
 using Portfolio.Application.Profiles;
+using Portfolio.Application.Projects;
 using Portfolio.Application.Skills;
 using Portfolio.Infrastructure.Authentication;
 using Portfolio.Infrastructure.Persistence;
@@ -54,6 +55,16 @@ public static class ServiceCollectionExtensions
                 uploads.MaxHeroImageWidth,
                 uploads.MaxHeroImageHeight);
         });
+        services.AddSingleton(provider =>
+        {
+            var uploads = provider.GetRequiredService<IOptions<UploadOptions>>().Value;
+            var bucket = configuration[$"{SupabaseStorageOptions.SectionName}:Buckets:ProjectImages"]
+                ?? "project-images";
+            return new ProjectImageSettings(
+                bucket,
+                uploads.MaxFileSize,
+                uploads.MaxProjectGalleryFiles);
+        });
         services.AddSingleton<IValidateOptions<SkillIconOptions>, SkillIconOptionsValidator>();
         services.AddOptions<SkillIconOptions>()
             .Bind(configuration.GetSection(SkillIconOptions.SectionName))
@@ -77,7 +88,8 @@ public static class ServiceCollectionExtensions
         services.AddControllers()
             .AddJsonOptions(options =>
                 options.JsonSerializerOptions.Converters.Add(
-                    new System.Text.Json.Serialization.JsonStringEnumConverter()));
+                    new System.Text.Json.Serialization.JsonStringEnumConverter(
+                        System.Text.Json.JsonNamingPolicy.CamelCase)));
         services.Configure<ApiBehaviorOptions>(options =>
         {
             options.InvalidModelStateResponseFactory = context =>
@@ -108,7 +120,7 @@ public static class ServiceCollectionExtensions
         services.AddOptions<CorsOptions>()
             .Configure<IOptions<FrontendOptions>>((options, frontend) =>
                 options.AddPolicy("Frontend", policy =>
-                    policy.WithOrigins(frontend.Value.Origin)
+                    policy.WithOrigins(frontend.Value.Origins)
                         .AllowAnyHeader()
                         .AllowAnyMethod()
                         .AllowCredentials()));
@@ -247,6 +259,7 @@ public static class ServiceCollectionExtensions
                 [new OpenApiSecuritySchemeReference(bearerScheme, document)] = [],
             });
             options.OperationFilter<AllowAnonymousOperationFilter>();
+            options.OperationFilter<AboutUpdateRequestExampleOperationFilter>();
         });
         return services;
     }

@@ -29,6 +29,10 @@ Skill icons allow PNG, JPEG, WebP, or passive SVG, default to a 512 KiB limit (`
 
 Hero images additionally enforce `Upload__MaxHeroImageWidth` and `Upload__MaxHeroImageHeight` (both default to 8192 pixels and are capped at 16384).
 
+Project gallery uploads accept PNG, JPEG, and WebP only. Each request contains one or more `files` parts plus a JSON `metadata` part whose zero-based `fileIndex` values map metadata to file order. The default request limit is 10 files (`Upload__MaxProjectGalleryFiles`, capped at 20), every image requires unique non-negative display order plus English and Vietnamese alt text, and generated keys use `projects/{projectId}/{uuid}.{extension}` in `SupabaseStorage__Buckets__ProjectImages`.
+
+Project write responses expose public image URLs, while the database retains object keys in `project_images.image_url` and the selected thumbnail object key in `projects.thumbnail_url`. Removing gallery metadata or deleting a Project commits the database change before attempting object deletion. A multi-file failure compensates every object uploaded by that request.
+
 ## Replacement lifecycle
 
 The required order is:

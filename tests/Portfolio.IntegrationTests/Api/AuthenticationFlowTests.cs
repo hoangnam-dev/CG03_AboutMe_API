@@ -219,7 +219,7 @@ internal sealed class PostgreSqlAuthApiFactory(string connectionString) : WebApp
     {
         builder.UseEnvironment("Development");
         builder.UseSetting("ConnectionStrings:PostgreSql", connectionString);
-        builder.UseSetting("Frontend:Origin", AuthenticationFlowTests.FrontendOrigin);
+        builder.UseSetting("Frontend:Origins:0", AuthenticationFlowTests.FrontendOrigin);
         builder.UseSetting("SupabaseStorage:Url", string.Empty);
         builder.UseSetting("SupabaseStorage:ServiceRoleKey", string.Empty);
         builder.UseSetting("BootstrapAdmin:Enabled", "false");
