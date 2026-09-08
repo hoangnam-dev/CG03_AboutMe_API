@@ -270,7 +270,7 @@ public static class ServiceCollectionExtensions
                 [new OpenApiSecuritySchemeReference(bearerScheme, document)] = [],
             });
             options.OperationFilter<AllowAnonymousOperationFilter>();
-            options.OperationFilter<AboutUpdateRequestExampleOperationFilter>();
+            options.OperationFilter<RequestExampleOperationFilter>();
         });
         return services;
     }
