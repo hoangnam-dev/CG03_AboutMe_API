@@ -24,6 +24,8 @@ Its purpose is regression prevention, not incident narration.
 | BUG-2026-003 | Resolved | Auth | Shared | Case-sensitive auth path check allowed Origin bypass | `csrf`, `origin`, `routing`, `case-sensitivity` |
 | BUG-2026-004 | Resolved | EF Core | Skills | CLR-default enum was replaced by a database default | `ef-core`, `enum`, `sentinel`, `database-default`, `postgresql` |
 | BUG-2026-005 | Resolved | Testing | Shared | PostgreSQL reset omitted a parent table | `test-isolation`, `postgresql`, `truncate`, `shared-fixture` |
+| BUG-2026-006 | Resolved | Other | Shared | Mermaid semicolon split sequence statements | `documentation`, `mermaid`, `parser`, `diagram-validation` |
+| BUG-2026-007 | Resolved | API | About | Debugger stop on handled NotFound looked like a process crash | `exception-handling`, `problem-details`, `debugger`, `not-found` |
 
 ---
 
@@ -270,6 +272,159 @@ Whenever a persisted aggregate becomes test-active, verify the shared PostgreSQL
 ### Related lessons
 
 - None.
+
+---
+
+## BUG-2026-006 — Mermaid semicolon split sequence statements
+
+- **Status:** Resolved
+- **Area:** Other
+- **Feature:** Shared
+- **First observed:** 2026-09-08
+- **Last updated:** 2026-09-08
+- **Tags:** `documentation`, `mermaid`, `parser`, `diagram-validation`
+
+### Symptom
+
+The Sprint 5 public Project sequence diagram failed to parse immediately after a `Note over` line. The same parser failure then recurred in both login and refresh-rotation diagrams in `AUTHENTICATION_GUIDE.md`.
+
+### Root cause
+
+Raw semicolons appeared inside Mermaid sequence-diagram note/message text. The Mermaid parser treated each semicolon as a statement separator and parsed the remaining prose as a new, invalid diagram statement.
+
+### Why it happened
+
+Verification checked Markdown fence counts and balanced `alt`/`loop`/`opt` blocks but did not run a Mermaid parser. Those structural checks cannot detect tokenization errors inside otherwise balanced diagrams.
+
+### Correct fix
+
+Replace raw semicolons in Mermaid note/message text with commas or conjunctions, then scan every Mermaid block for the same pattern and render with a real Mermaid parser when one is available.
+
+### Prevention rule
+
+Do not place raw `;` characters inside Mermaid sequence-diagram note or message text. Before declaring a flow document valid, run a real Mermaid parse/render; structural fence and control-block checks are supplementary only.
+
+### Regression test
+
+One-off repository-wide scan of every Mermaid `sequenceDiagram` rejects raw semicolons. A permanent parser-backed test was not added because this repository does not currently include a Mermaid CLI/runtime dependency.
+
+### Verification
+
+- The pre-fix scan found unsafe semicolons at lines 858 and 946 of `CURRENT_PROCESS_FLOWS.md` and failed.
+- The same scan passed after both statements were rewritten.
+- A repository-wide recurrence scan later found eight unsafe semicolons in the login and refresh-rotation diagrams of `AUTHENTICATION_GUIDE.md`; the scan passed after all eight statements were rewritten.
+
+### Relevant files
+
+- `docs/architecture/CURRENT_PROCESS_FLOWS.md`
+- `docs/security/AUTHENTICATION_GUIDE.md`
+- `docs/BUG_LESSONS.md`
+
+### Related lessons
+
+- None.
+
+---
+
+## BUG-2026-007 — Debugger stop on handled NotFound looked like a process crash
+
+- **Status:** Resolved
+- **Area:** API
+- **Feature:** About
+- **First observed:** 2026-09-08
+- **Last updated:** 2026-09-08
+- **Tags:** `exception-handling`, `problem-details`, `debugger`, `not-found`
+
+### Symptom
+
+Visual Studio stopped at `AboutService.GetPublicAsync` when published About data was absent and displayed `Exception User-Unhandled` for `NotFoundException`. While IIS Express was paused, Bruno could not receive the pending 404 response and eventually displayed `REQUEST_CANCELED`, which looked like the API process had crashed.
+
+### Root cause
+
+The repository correctly returned `null` when the Profile, About row, requested translation, or published state did not satisfy the public query. `AboutService` intentionally converted that absence into `NotFoundException`, and `GlobalExceptionHandler` correctly mapped it to HTTP 404 ProblemDetails. Visual Studio had `Break when this exception type is user-unhandled` enabled. Because the exception leaves Application/controller user code before ASP.NET Core's framework pipeline invokes `IExceptionHandler`, Just My Code classified the intermediate state as user-unhandled and paused execution even though the HTTP boundary handles it.
+
+### Why it happened
+
+Debugger exception settings and the exception helper displayed the throw site before centralized middleware completed the request. Pausing the server also kept the HTTP connection pending, so the client-side cancellation was incorrectly interpreted as server termination.
+
+### Correct fix
+
+Keep centralized exception mapping and do not add repetitive controller `try/catch` blocks. In the exception popup, clear `Break when this exception type is user-unhandled` for `NotFoundException` and press Continue/F5. Alternatively add the shown `Portfolio.Application.dll` exclusion if the developer wants to preserve the general user-unhandled rule. Then resend the request if the client already canceled it. Seed and publish the required About translations when a 200 response is expected.
+
+### Prevention rule
+
+When a known application exception appears under a debugger, verify the final HTTP status, ProblemDetails body, and server liveness before treating it as a crash or changing exception flow. Public missing/draft/translation-absent queries must remain 404, not 500 and not an empty 200 response.
+
+### Regression test
+
+`tests/Portfolio.IntegrationTests/Api/ProfileAboutApiTests.cs` — `MissingPublishedAboutReturnsNotFoundWithoutStoppingServer` asserts 404 ProblemDetails and then verifies `/health` still returns 200.
+
+### Verification
+
+- Focused HTTP regression test passed: 1 succeeded, 0 failed.
+- Source inspection confirmed `GlobalExceptionHandler` maps `NotFoundException` to 404 and logs only unexpected 500 exceptions as unhandled.
+- Visual Studio evidence showed `Break when this exception type is thrown` disabled and `Break when this exception type is user-unhandled` enabled; Bruno showed `REQUEST_CANCELED` while IIS Express remained paused.
+
+### Relevant files
+
+- `src/Portfolio.Application/About/AboutService.cs`
+- `src/Portfolio.Infrastructure/Persistence/Repositories/AboutRepository.cs`
+- `src/Portfolio.Api/Errors/GlobalExceptionHandler.cs`
+- `tests/Portfolio.IntegrationTests/Api/ProfileAboutApiTests.cs`
+- `docs/architecture/CURRENT_PROCESS_FLOWS.md`
+
+### Related lessons
+
+- None.
+
+---
+
+## BUG-2026-008 — Swagger generated invalid keys for a locale dictionary
+
+- **Status:** Resolved
+- **Area:** API
+- **Feature:** About
+- **First observed:** 2026-09-08
+- **Last updated:** 2026-09-08
+- **Tags:** `swagger`, `openapi`, `dictionary`, `localization`, `validation`
+
+### Symptom
+
+Swagger UI generated `additionalProp1`, `additionalProp2`, and `additionalProp3` as keys under `translations` for `PUT /api/v1/admin/about`. Sending that example returned HTTP 400 because the API accepts only `en` and `vi`.
+
+### Root cause
+
+`AboutUpdateRequest.Translations` is an `IReadOnlyDictionary<string, AboutTranslationRequest>`. Its C# type permits arbitrary string keys, so the generated OpenAPI schema could not infer the application's finite locale set and Swagger UI displayed generic dictionary placeholders.
+
+### Why it happened
+
+Runtime validation constrained the keys, but the OpenAPI documentation did not express or override that business rule. The generated example therefore contradicted the actual API contract.
+
+### Correct fix
+
+Register an operation filter for endpoints accepting `AboutUpdateRequest` and provide an explicit request example containing complete `en` and `vi` translations. Keep runtime validation as the enforcement boundary.
+
+### Prevention rule
+
+Whenever a request uses a dictionary whose keys are restricted by business rules, add an explicit valid OpenAPI example or schema constraint and a regression test proving Swagger does not advertise unsupported placeholder keys.
+
+### Regression test
+
+`tests/Portfolio.IntegrationTests/Api/ProfileAboutApiTests.cs` — `SwaggerAboutUpdateExampleUsesSupportedLocales` verifies the published request example contains `en` and `vi` and excludes `additionalProp1`.
+
+### Verification
+
+- The focused Swagger regression test passed: 1 succeeded, 0 failed.
+
+### Relevant files
+
+- `src/Portfolio.Api/OpenApi/AboutUpdateRequestExampleOperationFilter.cs`
+- `src/Portfolio.Api/Extensions/ServiceCollectionExtensions.cs`
+- `tests/Portfolio.IntegrationTests/Api/ProfileAboutApiTests.cs`
+
+### Related lessons
+
+- BUG-2026-006
 
 ---
 

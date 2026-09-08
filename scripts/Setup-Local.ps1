@@ -169,7 +169,7 @@ function New-EnvironmentFile {
     $content = @"
 # Required outside Development
 ConnectionStrings__PostgreSql=$connectionString
-Frontend__Origin=$frontendOrigin
+Frontend__Origins__0=$frontendOrigin
 Jwt__Issuer=Portfolio.Api
 Jwt__Audience=Portfolio.Frontend
 Jwt__ActiveKeyId=local-development
@@ -310,8 +310,13 @@ function Test-AbsoluteWebUri {
         throw "$Name has an unsupported URL scheme."
     }
 
-    if ($OriginOnly -and ($uri.PathAndQuery -ne "/" -or -not [string]::IsNullOrEmpty($uri.Fragment))) {
-        throw "$Name must be an origin without a path, query, or fragment."
+    if ($OriginOnly -and (
+        $Value -ne $Value.Trim() -or
+        $Value.EndsWith('/') -or
+        $uri.PathAndQuery -ne "/" -or
+        -not [string]::IsNullOrEmpty($uri.Fragment) -or
+        -not [string]::IsNullOrEmpty($uri.UserInfo))) {
+        throw "$Name must be an origin without credentials, path, query, fragment, whitespace, or a trailing slash."
     }
 }
 
@@ -329,9 +334,18 @@ function Test-Configuration {
         throw "ConnectionStrings__PostgreSql must contain a real database password."
     }
 
-    $frontendOrigin = Get-RequiredSetting $Settings "Frontend__Origin"
-    Test-AbsoluteWebUri $frontendOrigin "Frontend__Origin" -OriginOnly
+    $frontendOriginKeys = @($Settings.Keys |
+        Where-Object { $_ -match '^Frontend__Origins__\d+$' } |
+        Sort-Object { [int] ($_ -replace '^Frontend__Origins__', '') })
+    if ($frontendOriginKeys.Count -eq 0) {
+        throw "Frontend__Origins must contain at least one trusted origin."
+    }
 
+    $frontendOrigins = foreach ($frontendOriginKey in $frontendOriginKeys) {
+        $frontendOrigin = Get-RequiredSetting $Settings $frontendOriginKey
+        Test-AbsoluteWebUri $frontendOrigin $frontendOriginKey -OriginOnly
+        $frontendOrigin
+    }
     [void] (Get-RequiredSetting $Settings "Jwt__Issuer")
     [void] (Get-RequiredSetting $Settings "Jwt__Audience")
     [void] (Get-RequiredSetting $Settings "Jwt__ActiveKeyId")

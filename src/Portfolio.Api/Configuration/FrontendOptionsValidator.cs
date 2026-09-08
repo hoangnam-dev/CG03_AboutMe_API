@@ -6,12 +6,27 @@ public sealed class FrontendOptionsValidator : IValidateOptions<FrontendOptions>
 {
     public ValidateOptionsResult Validate(string? name, FrontendOptions options)
     {
-        if (!Uri.TryCreate(options.Origin, UriKind.Absolute, out var origin) ||
-            (origin.Scheme != Uri.UriSchemeHttps && origin.Scheme != Uri.UriSchemeHttp) ||
-            origin.PathAndQuery != "/")
+        if (options.Origins is null || options.Origins.Length == 0)
         {
             return ValidateOptionsResult.Fail(
-                "Frontend:Origin must be an absolute HTTP(S) origin without a path.");
+                "Frontend:Origins must contain at least one trusted origin.");
+        }
+
+        foreach (var configuredOrigin in options.Origins)
+        {
+            if (string.IsNullOrWhiteSpace(configuredOrigin) ||
+                configuredOrigin != configuredOrigin.Trim() ||
+                configuredOrigin.EndsWith('/') ||
+                !Uri.TryCreate(configuredOrigin, UriKind.Absolute, out var origin) ||
+                (origin.Scheme != Uri.UriSchemeHttps && origin.Scheme != Uri.UriSchemeHttp) ||
+                origin.PathAndQuery != "/" ||
+                !string.IsNullOrEmpty(origin.Fragment) ||
+                !string.IsNullOrEmpty(origin.UserInfo))
+            {
+                return ValidateOptionsResult.Fail(
+                    $"Frontend:Origins contains invalid origin '{configuredOrigin}'. " +
+                    "Each value must be an absolute HTTP(S) origin without credentials, path, query, fragment, whitespace, or a trailing slash.");
+            }
         }
 
         return ValidateOptionsResult.Success;

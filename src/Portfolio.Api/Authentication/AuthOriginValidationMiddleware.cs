@@ -8,7 +8,8 @@ public sealed class AuthOriginValidationMiddleware(
     RequestDelegate next,
     IOptions<FrontendOptions> options)
 {
-    private readonly string _allowedOrigin = options.Value.Origin.TrimEnd('/');
+    private readonly HashSet<string> _allowedOrigins =
+        new(options.Value.Origins, StringComparer.Ordinal);
 
     public async Task InvokeAsync(HttpContext context, IProblemDetailsService problemDetailsService)
     {
@@ -45,7 +46,8 @@ public sealed class AuthOriginValidationMiddleware(
 
     private bool IsAllowed(Microsoft.Extensions.Primitives.StringValues origins) =>
         origins.Count == 1 &&
-        string.Equals(origins[0]?.TrimEnd('/'), _allowedOrigin, StringComparison.Ordinal);
+        origins[0] is { } origin &&
+        _allowedOrigins.Contains(origin);
 
     private static bool RequiresOriginValidation(HttpRequest request) =>
         (HttpMethods.IsPost(request.Method) || HttpMethods.IsDelete(request.Method)) &&

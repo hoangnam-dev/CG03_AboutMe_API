@@ -937,15 +937,16 @@ Không dùng `IFormFile.FileName` làm tên lưu trữ. Tên gốc chỉ dùng l
 
 ## 17. CORS
 
-Production chỉ cho phép domain Frontend:
+Production chỉ cho phép allowlist domain Frontend:
 
 ```csharp
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("Frontend", policy =>
-        policy.WithOrigins(configuration["Frontend:Origin"]!)
+        policy.WithOrigins(frontendOptions.Origins)
               .AllowAnyHeader()
-              .AllowAnyMethod());
+              .AllowAnyMethod()
+              .AllowCredentials());
 });
 ```
 
@@ -955,7 +956,7 @@ Không dùng `AllowAnyOrigin()` cùng credentials. Preview domain chỉ thêm kh
 
 ```text
 ConnectionStrings__PostgreSql
-Frontend__Origin
+Frontend__Origins__0
 Jwt__Issuer
 Jwt__Audience
 Jwt__ActiveKeyId

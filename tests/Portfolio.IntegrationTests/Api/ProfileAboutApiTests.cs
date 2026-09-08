@@ -49,6 +49,27 @@ public sealed class ProfileAboutApiTests : IClassFixture<DatabaseOptionalApiFact
     }
 
     [Fact]
+    public async Task SwaggerAboutUpdateExampleUsesSupportedLocales()
+    {
+        var json = await _client.GetStringAsync(
+            "/swagger/v1/swagger.json", TestContext.Current.CancellationToken);
+        using var document = JsonDocument.Parse(json);
+        var example = document.RootElement
+            .GetProperty("paths")
+            .GetProperty("/api/v1/admin/about")
+            .GetProperty("put")
+            .GetProperty("requestBody")
+            .GetProperty("content")
+            .GetProperty("application/json")
+            .GetProperty("example");
+        var translations = example.GetProperty("translations");
+
+        Assert.True(translations.TryGetProperty("en", out _));
+        Assert.True(translations.TryGetProperty("vi", out _));
+        Assert.False(translations.TryGetProperty("additionalProp1", out _));
+    }
+
+    [Fact]
     public async Task UnsupportedLocaleReturnsProblemDetailsBeforeDatabaseAccess()
     {
         var response = await _client.GetAsync(
