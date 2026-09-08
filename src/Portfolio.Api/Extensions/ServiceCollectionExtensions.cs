@@ -18,6 +18,7 @@ using Portfolio.Application.Certificates;
 using Portfolio.Application.Common.Authentication;
 using Portfolio.Application.Profiles;
 using Portfolio.Application.Projects;
+using Portfolio.Application.Resumes;
 using Portfolio.Application.Skills;
 using Portfolio.Infrastructure.Authentication;
 using Portfolio.Infrastructure.Persistence;
@@ -72,6 +73,16 @@ public static class ServiceCollectionExtensions
             var bucket = configuration[$"{SupabaseStorageOptions.SectionName}:Buckets:CertificateFiles"]
                 ?? "certificate-files";
             return new CertificateEvidenceSettings(
+                bucket,
+                uploads.MaxFileSize,
+                TimeSpan.FromMinutes(5));
+        });
+        services.AddSingleton(provider =>
+        {
+            var uploads = provider.GetRequiredService<IOptions<UploadOptions>>().Value;
+            var bucket = configuration[$"{SupabaseStorageOptions.SectionName}:Buckets:CvFiles"]
+                ?? "cv-files";
+            return new ResumeSettings(
                 bucket,
                 uploads.MaxFileSize,
                 TimeSpan.FromMinutes(5));
