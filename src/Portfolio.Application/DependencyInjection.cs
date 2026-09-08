@@ -7,6 +7,7 @@ using Portfolio.Application.Dashboard;
 using Portfolio.Application.Experiences;
 using Portfolio.Application.Profiles;
 using Portfolio.Application.Projects;
+using Portfolio.Application.Resumes;
 using Portfolio.Application.Skills;
 
 namespace Portfolio.Application;
@@ -22,6 +23,7 @@ public static class DependencyInjection
         services.AddScoped<IAboutService, AboutService>();
         services.AddScoped<IExperienceService, ExperienceService>();
         services.AddScoped<IProjectService, ProjectService>();
+        services.AddScoped<IResumeService, ResumeService>();
         services.AddScoped<ISkillService, SkillService>();
         services.AddScoped<StorageReplacement>();
         return services;

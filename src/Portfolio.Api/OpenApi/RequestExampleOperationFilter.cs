@@ -6,6 +6,7 @@ using Portfolio.Application.Certificates;
 using Portfolio.Application.Experiences;
 using Portfolio.Application.Profiles;
 using Portfolio.Application.Projects;
+using Portfolio.Application.Resumes;
 using Portfolio.Application.Skills;
 using Swashbuckle.AspNetCore.SwaggerGen;
 
@@ -224,6 +225,14 @@ public sealed class RequestExampleOperationFilter : IOperationFilter
               },
               "technologyIds": ["9d5ba420-715c-43b5-a147-b98a90b05160"]
             }
+            """),
+        _ when requestType == typeof(ResumeCurrentRequest) => Parse(
+            """
+            { "isCurrent": true }
+            """),
+        _ when requestType == typeof(ResumePublishRequest) => Parse(
+            """
+            { "isPublished": true }
             """),
         _ => null,
     };
