@@ -26,6 +26,10 @@ Its purpose is regression prevention, not incident narration.
 | BUG-2026-005 | Resolved | Testing | Shared | PostgreSQL reset omitted a parent table | `test-isolation`, `postgresql`, `truncate`, `shared-fixture` |
 | BUG-2026-006 | Resolved | Other | Shared | Mermaid semicolon split sequence statements | `documentation`, `mermaid`, `parser`, `diagram-validation` |
 | BUG-2026-007 | Resolved | API | About | Debugger stop on handled NotFound looked like a process crash | `exception-handling`, `problem-details`, `debugger`, `not-found` |
+| BUG-2026-008 | Resolved | API | Shared | Swagger generated invalid keys for a locale dictionary | `swagger`, `openapi`, `dictionary`, `localization`, `validation` |
+| BUG-2026-009 | Resolved | Application / Storage | Certificates | Certificate upload replaced the wrong evidence slot | `file-replacement`, `object-storage`, `partial-failure`, `contract-mapping` |
+| BUG-2026-010 | Resolved | Testing / PostgreSQL | Resumes | Synchronous barrier blocked async concurrency test construction | `concurrency-test`, `async-deadlock`, `testcontainers` |
+| BUG-2026-011 | Resolved | PostgreSQL | Shared | Direct role revokes left inherited PUBLIC access | `postgresql`, `grants`, `public-role`, `supabase`, `data-api` |
 
 ---
 
@@ -528,6 +532,67 @@ Concurrency tests must use an asynchronous start gate and materialize all partic
 ### Related lessons
 
 - None.
+
+---
+
+## BUG-2026-011 — Direct role revokes left inherited PUBLIC access
+
+- **Status:** Resolved
+- **Area:** PostgreSQL
+- **Feature:** Shared
+- **First observed:** 2026-09-08
+- **Last updated:** 2026-09-08
+- **Tags:** `postgresql`, `grants`, `public-role`, `supabase`, `data-api`
+
+### Symptom
+
+The database access policy directly revoked `USAGE` on schema `public` from
+`anon` and `authenticated`, but PostgreSQL still reported that both roles could
+use the schema.
+
+### Root cause
+
+Both roles inherited the schema privilege through PostgreSQL's implicit
+`PUBLIC` role. Revoking a privilege from a named role does not remove the same
+privilege inherited through `PUBLIC`.
+
+### Why it happened
+
+The first policy script reviewed only explicit grants to Supabase Data API
+roles and did not test effective privileges, which include role inheritance.
+
+### Correct fix
+
+Revoke schema/table/sequence/function privileges from `PUBLIC` as well as
+`anon` and `authenticated`, then explicitly grant only the runtime and migration
+roles their required privileges.
+
+### Prevention rule
+
+Database access-policy tests must assert effective privileges with
+`has_schema_privilege` and `has_table_privilege`; direct ACL statements alone
+do not prove that inherited `PUBLIC` access is closed.
+
+### Regression test
+
+`tests/Portfolio.IntegrationTests/Persistence/DatabaseAccessPolicyTests.cs` —
+`AccessPolicyDeniesDataApiRolesAndGrantsRuntimeDml`.
+
+### Verification
+
+- PostgreSQL 17 Testcontainers policy test passed after the `PUBLIC` revokes;
+  it also proved runtime CRUD, denied TRUNCATE/migration-history access, and
+  executed the rollback script.
+
+### Relevant files
+
+- `docs/supabase/database-access.sql`
+- `docs/supabase/database-access-rollback.sql`
+- `tests/Portfolio.IntegrationTests/Persistence/DatabaseAccessPolicyTests.cs`
+
+### Related lessons
+
+- BUG-2026-001
 
 ---
 

@@ -34,6 +34,7 @@ public static class ServiceCollectionExtensions
         bool allowUnconfiguredDependencies = false)
     {
         services.AddSingleton<IValidateOptions<FrontendOptions>, FrontendOptionsValidator>();
+        services.AddSingleton<IValidateOptions<FrontendOptions>, ProductionFrontendOptionsValidator>();
         services.AddOptions<FrontendOptions>()
             .Bind(configuration.GetSection(FrontendOptions.SectionName))
             .ValidateOnStart();

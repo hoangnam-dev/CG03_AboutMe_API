@@ -177,3 +177,16 @@ Sprint 9 cannot close until:
 5. Supabase Data API/database-role and Storage bucket access matrices are smoke-tested with production-equivalent roles.
 6. Logs from hostile/error test runs contain no secrets, submitted message bodies, passwords, JWTs, signed URLs, or raw connection strings.
 7. Bootstrap administration is disabled and the administrator password is held outside repository/deployment manifests.
+
+Repository evidence and production-owned checks are indexed in
+[`SPRINT_9_SECURITY_CHECKLIST.md`](SPRINT_9_SECURITY_CHECKLIST.md). Database
+role/grant changes and their safe rollback are defined in
+[`database-access.sql`](../supabase/database-access.sql) and
+[`database-access-rollback.sql`](../supabase/database-access-rollback.sql).
+The Storage access matrix and production smoke procedure are defined in
+[`STORAGE_ACCESS.md`](../supabase/STORAGE_ACCESS.md).
+
+Local automated tests do not claim to prove live Supabase project policy. The
+database/Data API and Storage matrices remain release-blocking production gates
+owned by the release operator and must be recorded with production-equivalent
+roles before this threat model is signed off for deployment.
