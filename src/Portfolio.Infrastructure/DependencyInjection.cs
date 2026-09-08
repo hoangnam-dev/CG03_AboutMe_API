@@ -80,6 +80,8 @@ public static class DependencyInjection
         services.AddSingleton<IContactNotifier, LoggingContactNotifier>();
 
         services.AddSingleton<IValidateOptions<BootstrapAdminOptions>, BootstrapAdminOptionsValidator>();
+        services.AddSingleton<IValidateOptions<BootstrapAdminOptions>>(
+            new ProductionBootstrapAdminOptionsValidator(!allowUnconfiguredDependencies));
         services.AddOptions<BootstrapAdminOptions>()
             .Bind(configuration.GetSection(BootstrapAdminOptions.SectionName))
             .ValidateOnStart();

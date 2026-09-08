@@ -129,9 +129,14 @@ public sealed partial class ResumeService(
             throw Invalid("isCurrent", "This operation requires isCurrent to be true.");
         var result = await repository.SetCurrentAsync(
             id, timeProvider.GetUtcNow(), cancellationToken);
+        if (result.Status == ResumeActivationStatus.Activated && result.Resume is not null)
+        {
+            LogCurrentChanged(logger, result.Resume.Id);
+            return MapAdmin(result.Resume);
+        }
+
         return result.Status switch
         {
-            ResumeActivationStatus.Activated when result.Resume is not null => MapAdmin(result.Resume),
             ResumeActivationStatus.NotFound => throw new NotFoundException("Resume was not found."),
             ResumeActivationStatus.NotPublished => throw Invalid(
                 "isCurrent", "Only a published Resume can be current."),
@@ -152,6 +157,7 @@ public sealed partial class ResumeService(
         resume.IsPublished = request.IsPublished;
         resume.UpdatedAt = timeProvider.GetUtcNow();
         await repository.SaveChangesAsync(cancellationToken);
+        LogPublicationChanged(logger, resume.Id, resume.IsPublished);
         return MapAdmin(resume);
     }
 
@@ -234,4 +240,10 @@ public sealed partial class ResumeService(
 
     [LoggerMessage(EventId = 2703, Level = LogLevel.Error, Message = "Storage cleanup failed for bucket {Bucket} and object {ObjectKey}; reconciliation is required.")]
     private static partial void LogCleanupFailure(ILogger logger, string bucket, string objectKey, Exception exception);
+
+    [LoggerMessage(EventId = 2704, Level = LogLevel.Information, Message = "Resume {ResumeId} was selected as current.")]
+    private static partial void LogCurrentChanged(ILogger logger, Guid resumeId);
+
+    [LoggerMessage(EventId = 2705, Level = LogLevel.Information, Message = "Resume {ResumeId} publication set to {IsPublished}.")]
+    private static partial void LogPublicationChanged(ILogger logger, Guid resumeId, bool isPublished);
 }

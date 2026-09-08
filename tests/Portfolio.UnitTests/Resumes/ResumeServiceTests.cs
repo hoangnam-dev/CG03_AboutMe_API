@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Portfolio.Application.Common.Exceptions;
 using Portfolio.Application.Common.Models;
@@ -121,6 +122,52 @@ public sealed class ResumeServiceTests
     }
 
     [Fact]
+    public async Task SetCurrentEmitsRedactedAuditEventAfterActivation()
+    {
+        var resume = Resume(isPublished: true, isActive: false);
+        var logger = new RecordingLogger<ResumeService>();
+        var service = CreateService(
+            new RepositoryStub
+            {
+                Activation = new ResumeActivationResult(ResumeActivationStatus.Activated, resume),
+            },
+            new StorageStub(),
+            logger);
+
+        await service.SetCurrentAsync(
+            resume.Id, new ResumeCurrentRequest(true), TestContext.Current.CancellationToken);
+
+        var entry = Assert.Single(logger.Entries);
+        Assert.Equal(2704, entry.EventId.Id);
+        Assert.Contains(resume.Id.ToString(), entry.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain(resume.FileUrl, entry.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain("English", entry.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain("resume.pdf", entry.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task SetPublishedEmitsRedactedAuditEventAfterPersistence()
+    {
+        var resume = Resume(isPublished: false, isActive: false);
+        var logger = new RecordingLogger<ResumeService>();
+        var service = CreateService(
+            new RepositoryStub { Existing = resume },
+            new StorageStub(),
+            logger);
+
+        await service.SetPublishedAsync(
+            resume.Id, new ResumePublishRequest(true), TestContext.Current.CancellationToken);
+
+        var entry = Assert.Single(logger.Entries);
+        Assert.Equal(2705, entry.EventId.Id);
+        Assert.Contains(resume.Id.ToString(), entry.Message, StringComparison.Ordinal);
+        Assert.Contains("True", entry.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain(resume.FileUrl, entry.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain("English", entry.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain("resume.pdf", entry.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task SetCurrentRejectsFalseAndUnpublishedTarget()
     {
         var repository = new RepositoryStub
@@ -161,13 +208,16 @@ public sealed class ResumeServiceTests
         Assert.Equal(["save", $"delete:{resume.FileUrl}"], events);
     }
 
-    private static ResumeService CreateService(IResumeRepository repository, IFileStorage storage) =>
+    private static ResumeService CreateService(
+        IResumeRepository repository,
+        IFileStorage storage,
+        ILogger<ResumeService>? logger = null) =>
         new(
             repository,
             storage,
             new ResumeSettings("cv-files", 10 * 1024 * 1024, TimeSpan.FromMinutes(5)),
             new FixedTimeProvider(YearBoundary),
-            NullLogger<ResumeService>.Instance);
+            logger ?? NullLogger<ResumeService>.Instance);
 
     private static ResumeUploadRequest Upload(
         Stream content,
@@ -277,5 +327,22 @@ public sealed class ResumeServiceTests
             SignedLifetime = lifetime;
             return Task.FromResult(new Uri("https://storage.example/signed"));
         }
+    }
+
+    private sealed class RecordingLogger<T> : ILogger<T>
+    {
+        public List<(EventId EventId, string Message)> Entries { get; } = [];
+
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(
+            LogLevel logLevel,
+            EventId eventId,
+            TState state,
+            Exception? exception,
+            Func<TState, Exception?, string> formatter) =>
+            Entries.Add((eventId, formatter(state, exception)));
     }
 }
