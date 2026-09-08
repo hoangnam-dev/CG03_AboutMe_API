@@ -7,6 +7,8 @@ using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Portfolio.Application.About;
+using Portfolio.Application.Common.Models;
+using Portfolio.Application.Profiles;
 using Xunit;
 
 namespace Portfolio.IntegrationTests.Api;
@@ -109,6 +111,32 @@ public sealed class ProfileAboutApiTests : IClassFixture<DatabaseOptionalApiFact
     }
 
     [Fact]
+    public async Task HiddenProfileContactPropertiesAreAbsentFromPublicJson()
+    {
+        await using var factory = _factory.WithWebHostBuilder(builder =>
+            builder.ConfigureServices(services =>
+            {
+                services.RemoveAll<IProfileRepository>();
+                services.AddSingleton<IProfileRepository>(new PublicProfileRepository());
+            }));
+        using var client = factory.CreateClient(
+            new WebApplicationFactoryClientOptions { AllowAutoRedirect = false });
+
+        var response = await client.GetAsync(
+            "/api/v1/portfolio/nam/profile?locale=en",
+            TestContext.Current.CancellationToken);
+        using var document = JsonDocument.Parse(
+            await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken));
+        var data = document.RootElement.GetProperty("data");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.False(data.TryGetProperty("email", out _));
+        Assert.False(data.TryGetProperty("phone", out _));
+        Assert.DoesNotContain("hidden@example.com", data.GetRawText(), StringComparison.Ordinal);
+        Assert.DoesNotContain("+84-000-000-000", data.GetRawText(), StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task NonAdminTokenReceivesForbidden()
     {
         using var request = new HttpRequestMessage(HttpMethod.Get, "/api/v1/admin/profile");
@@ -140,6 +168,46 @@ public sealed class ProfileAboutApiTests : IClassFixture<DatabaseOptionalApiFact
         public Task AddAsync(
             Portfolio.Application.Common.Models.About about,
             CancellationToken cancellationToken) => throw new NotSupportedException();
+
+        public Task SaveChangesAsync(CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
+    }
+
+    private sealed class PublicProfileRepository : IProfileRepository
+    {
+        public Task<ProfilePublicProjection?> GetPublicAsync(
+            string slug,
+            string locale,
+            CancellationToken cancellationToken) =>
+            Task.FromResult<ProfilePublicProjection?>(new(
+                slug,
+                "Fictional Owner",
+                "Engineer",
+                "Public biography",
+                "Ho Chi Minh City",
+                null,
+                true,
+                "hidden@example.com",
+                "+84-000-000-000",
+                false,
+                false,
+                null,
+                null,
+                []));
+
+        public Task<Profile?> GetAdminAsync(CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
+
+        public Task<Profile?> GetForUpdateAsync(CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
+
+        public Task<bool> SlugExistsAsync(
+            string slug,
+            Guid? excludedId,
+            CancellationToken cancellationToken) => throw new NotSupportedException();
+
+        public Task AddAsync(Profile profile, CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
 
         public Task SaveChangesAsync(CancellationToken cancellationToken) =>
             throw new NotSupportedException();

@@ -11,6 +11,15 @@
   </ItemGroup>
 
   <ItemGroup>
+    <None Include="..\..\docs\supabase\database-access.sql"
+          Link="Security\database-access.sql"
+          CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\docs\supabase\database-access-rollback.sql"
+          Link="Security\database-access-rollback.sql"
+          CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <ItemGroup>
     <PackageReference Include="coverlet.collector">
       <PrivateAssets>all</PrivateAssets>
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>

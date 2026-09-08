@@ -4,7 +4,7 @@
 
 ## 1. Phạm vi
 
-Tài liệu này mô tả hành vi runtime đã được triển khai đến hết Sprint 8; các kiểm thử PostgreSQL cần Docker đang chạy:
+Tài liệu này mô tả hành vi runtime và các cổng an toàn đã được triển khai đến hết Sprint 9; các kiểm thử PostgreSQL cần Docker đang chạy:
 
 - thiết lập local, migration và bootstrap tài khoản Administrator;
 - đăng nhập Administrator và phát hành JWT;
@@ -21,7 +21,11 @@ Tài liệu này mô tả hành vi runtime đã được triển khai đến h�
 - upload/quản trị Resume version, chuyển bản current và cung cấp CV hiện hành bằng signed URL;
 - tiếp nhận Contact công khai có rate limit, body-size limit, validation, honeypot và notification best effort;
 - quản trị Contact inbox: lọc/tìm kiếm/phân trang, xem chi tiết, đổi trạng thái và xóa;
-- xử lý lỗi tập trung và ranh giới dữ liệu nhạy cảm.
+- xử lý lỗi tập trung và ranh giới dữ liệu nhạy cảm;
+- fail-fast khi cấu hình ngoài Development không đạt yêu cầu an toàn;
+- kiểm soát hồi quy quyền Admin, exact-locale và public disclosure trên toàn bộ feature;
+- tách quyền PostgreSQL runtime/migration khỏi Supabase Data API roles và chốt ma trận quyền Storage;
+- ghi audit tối thiểu cho thay đổi publication/current của Resume.
 
 Nguồn đối chiếu:
 
@@ -30,7 +34,8 @@ Nguồn đối chiếu:
 - `src/Portfolio.Application/Authentication`, `Dashboard`, `Profiles`, `About`, `Skills`, `Experiences`, `Projects`, `Certificates`, `Resumes`, `Contacts`;
 - `src/Portfolio.Infrastructure/Authentication`, `Persistence`, `Storage`, `Notifications`;
 - `tests/Portfolio.UnitTests` và `tests/Portfolio.IntegrationTests`;
-- `docs/api/API_CONTRACT.md` và `docs/STORAGE.md`.
+- `docs/api/API_CONTRACT.md`, `docs/STORAGE.md`;
+- `docs/security/SPRINT_9_SECURITY_CHECKLIST.md` và `docs/supabase`.
 
 ## 2. Data Flow Diagram — mức hệ thống
 
@@ -1178,6 +1183,7 @@ sequenceDiagram
             else Target Published
                 Repo->>DB: Deactivate current cũ rồi activate target trong cùng transaction
                 Repo->>DB: Commit transaction
+                Service->>Log: Event 2704 với ResumeId sau khi activate thành công
                 Service-->>Admin: 200 ResumeAdminResponse, version không đổi
             end
         end
@@ -1190,6 +1196,7 @@ sequenceDiagram
         else State hợp lệ
             Service->>Repo: SaveChangesAsync()
             Repo->>DB: Update is_published, không cấp version mới
+            Service->>Log: Event 2705 với ResumeId và IsPublished sau khi lưu thành công
             Service-->>Admin: 200 ResumeAdminResponse
         end
     else Delete version
@@ -1213,7 +1220,7 @@ sequenceDiagram
     end
 ```
 
-Toàn bộ endpoint `/api/v1/admin/cv` yêu cầu `AdminPolicy`: thiếu hoặc JWT không hợp lệ trả 401, còn tài khoản không có role Admin trả 403 trước khi vào Controller. Đổi publication hoặc current không tạo version mới. Partial unique index `ux_resumes_one_active_per_language` bảo vệ invariant tối đa một Resume Active cho mỗi ngôn ngữ ở database; application rule bổ sung rằng Resume Active phải Published.
+Toàn bộ endpoint `/api/v1/admin/cv` yêu cầu `AdminPolicy`: thiếu hoặc JWT không hợp lệ trả 401, còn tài khoản không có role Admin trả 403 trước khi vào Controller. Đổi publication hoặc current không tạo version mới. Chỉ sau khi persistence thành công, service mới phát audit event 2704 hoặc 2705; event chỉ chứa Resume ID và trạng thái boolean cần thiết, không chứa tên file, object key, signed URL hay nội dung CV. Partial unique index `ux_resumes_one_active_per_language` bảo vệ invariant tối đa một Resume Active cho mỗi ngôn ngữ ở database; application rule bổ sung rằng Resume Active phải Published.
 
 ## 25. Contact submission và quản trị inbox
 
@@ -1454,7 +1461,135 @@ Chỉ validation error có `errors` theo field. Mọi Problem Details có `reque
 - Request Contact lớn hơn 65,536 byte bị từ chối kể cả khi dùng chunked transfer. Notification chỉ chạy sau persistence và không quyết định response 201.
 - PostgreSQL integration tests cần Docker và image `postgres:17-alpine`.
 
-## 29. Cổng hoàn thành sprint và quy tắc đồng bộ tài liệu
+## 29. Sprint 9 — Security hardening và các cổng kiểm soát
+
+Sprint 9 không thêm endpoint nghiệp vụ mới. Sprint này siết các trust boundary đã có, biến các giả định vận hành thành kiểm tra fail-fast hoặc kiểm thử hồi quy, đồng thời bổ sung audit tối thiểu cho thao tác nhạy cảm.
+
+### 29.1. Startup fail-fast ngoài Development
+
+```mermaid
+flowchart TD
+    Start[Khởi tạo host ngoài Development]
+    Bind[Bind options và chạy ValidateOnStart]
+    Database{PostgreSQL hợp lệ?}
+    Frontend{Đúng một HTTPS frontend origin?}
+    Jwt{JWT active key và certificate hợp lệ?}
+    Storage{Storage URL và service-role key hợp lệ?}
+    Upload{Upload limits hợp lệ?}
+    Rate{Auth và Contact rate limits hợp lệ?}
+    Bootstrap{BootstrapAdmin disabled?}
+    Reject[Throw OptionsValidationException và không nhận traffic]
+    Build[Build middleware pipeline]
+    Run[Map endpoints và nhận request]
+
+    Start --> Bind
+    Bind --> Database
+    Database -->|Không| Reject
+    Database -->|Có| Frontend
+    Frontend -->|Không| Reject
+    Frontend -->|Có| Jwt
+    Jwt -->|Không| Reject
+    Jwt -->|Có| Storage
+    Storage -->|Không| Reject
+    Storage -->|Có| Upload
+    Upload -->|Không| Reject
+    Upload -->|Có| Rate
+    Rate -->|Không| Reject
+    Rate -->|Có| Bootstrap
+    Bootstrap -->|Không| Reject
+    Bootstrap -->|Có| Build
+    Build --> Run
+```
+
+Ngoài Development, `Frontend:Origins` phải có đúng một origin tuyệt đối dùng HTTPS và `BootstrapAdmin:Enabled` bắt buộc là `false`. Các validator nền vẫn kiểm tra hình dạng origin, database, JWT, refresh-token pepper, Storage, upload và rate-limit settings. Vì tất cả dùng `ValidateOnStart`, cấu hình không an toàn làm tiến trình dừng trước khi phục vụ request, thay vì để lỗi xuất hiện muộn ở CORS, đăng nhập, upload hoặc Contact.
+
+Development vẫn cho phép nhiều exact origin phục vụ Swagger/Kestrel/Next.js cục bộ và có thể bật bootstrap có kiểm soát. Sau khi bootstrap local thành công vẫn phải tắt cờ theo quy trình ở mục 4.
+
+### 29.2. Authorization, disclosure và locale regression gates
+
+```mermaid
+flowchart LR
+    Routes[EndpointDataSource]
+    Matrix[Dynamic admin authorization matrix]
+    Anonymous[Anonymous request]
+    User[JWT role User]
+    Admin[JWT role Admin]
+    Gate401[Expect 401]
+    Gate403[Expect 403]
+    Pass[Must pass authorization]
+
+    Seed[PostgreSQL fixture with en-only published data]
+    PublicRepos[Public repositories]
+    Vi[Request locale vi]
+    NoFallback[Expect null, empty result or 404 path]
+
+    Routes --> Matrix
+    Matrix --> Anonymous
+    Matrix --> User
+    Matrix --> Admin
+    Anonymous --> Gate401
+    User --> Gate403
+    Admin --> Pass
+
+    Seed --> PublicRepos
+    PublicRepos --> Vi
+    Vi --> NoFallback
+```
+
+Ma trận quyền khám phá động toàn bộ controller operation dưới `/api/v1/admin`; do đó endpoint Admin bổ sung về sau cũng phải trả 401 cho anonymous, 403 cho JWT không có role `Admin`, và vượt qua authorization với role `Admin`. Với upload endpoint, test gửi đúng multipart media type để 415 không che khuất kết quả authorization. Việc “vượt qua authorization” không đồng nghĩa request nghiệp vụ phải thành công: request rỗng hoặc ID giả vẫn có thể nhận 400/404 sau cổng quyền.
+
+Public leak test tạo dữ liệu Published chỉ có translation `en`, rồi truy vấn `vi` qua Profile, About, Skills, Experiences, Projects, Certificates và Resume. Kết quả bắt buộc là không tìm thấy/collection rỗng; backend không được tự fallback sang locale khác. Các serialization test đồng thời yêu cầu thuộc tính email/phone bị ẩn phải vắng hẳn khỏi public JSON, không chỉ mang giá trị `null`.
+
+### 29.3. PostgreSQL và Supabase Storage trust boundary
+
+```mermaid
+flowchart LR
+    MigrationLogin[Controlled migration login]
+    Migrator[portfolio_migrator]
+    ApiLogin[API deployment login]
+    Runtime[portfolio_api]
+    DataApi[Supabase anon and authenticated]
+    PublicSchema[(PostgreSQL public schema)]
+
+    Browser[Browser]
+    API[Portfolio.Api with service-role secret]
+    PublicBuckets[avatars, project-images, skill-icons]
+    PrivateBuckets[certificate-files, cv-files]
+
+    MigrationLogin -->|member| Migrator
+    Migrator -->|DDL and migration privileges| PublicSchema
+    ApiLogin -->|member| Runtime
+    Runtime -->|listed-table DML only| PublicSchema
+    DataApi -.->|USAGE and data access revoked| PublicSchema
+
+    API -->|write and delete| PublicBuckets
+    API -->|write, delete and sign read| PrivateBuckets
+    Browser -->|public URL read only| PublicBuckets
+    Browser -->|five-minute signed URL only| PrivateBuckets
+    Browser -.->|no direct write policy| PublicBuckets
+    Browser -.->|no direct write policy| PrivateBuckets
+```
+
+`docs/supabase/database-access.sql` thu hồi quyền kế thừa qua `PUBLIC` cùng quyền trực tiếp của `anon` và `authenticated`, cấp DML trên danh sách bảng ứng dụng cho `portfolio_api`, và dành quyền migration cho `portfolio_migrator`. Runtime role không có `TRUNCATE`, không đọc `__EFMigrationsHistory`, và không sở hữu DDL. Default privileges giữ nguyên ranh giới này cho object mới do migration role tạo. Rollback chỉ thu hồi các grant Sprint 9; không tự mở lại Data API và không dùng `GRANT ALL`.
+
+Storage giữ ba bucket ảnh ở chế độ public-read/server-write; `certificate-files` và `cv-files` là private, chỉ được đọc qua signed URL 5 phút. `anon`/`authenticated` không có policy ghi, còn service-role credential chỉ tồn tại trong backend. Đây là thay đổi cấu hình triển khai, không đổi URL/DTO contract hiện có.
+
+### 29.4. Lý do điều chỉnh và ảnh hưởng tới chức năng trước
+
+| Điều chỉnh | Lý do | Ảnh hưởng tới chức năng đã có |
+| --- | --- | --- |
+| Fail-fast cấu hình ngoài Development | Không để bản phát hành khởi động ở trạng thái CORS, JWT, Storage, upload hoặc rate limit không an toàn | Deployment sai cấu hình sẽ dừng ngay. API contract khi cấu hình đúng không đổi; local Development vẫn hỗ trợ nhiều origin và bootstrap có kiểm soát. |
+| Đúng một HTTPS frontend origin | Thu hẹp CORS và Origin/CSRF trust boundary của production | Frontend production phải dùng origin duy nhất đã cấu hình; HTTP, localhost hoặc origin thứ hai bị từ chối lúc startup. Auth flow và credentialed CORS vẫn dùng chung allowlist. |
+| Bootstrap bị cấm ngoài Development | Tránh credential provisioning tồn tại lâu dài trong runtime production | Production phải provision Admin bằng quy trình kiểm soát trước deployment. Login/session hiện có không đổi sau khi user và role đã tồn tại. |
+| Dynamic Admin authorization matrix | Ngăn endpoint Admin mới quên `AdminPolicy` hoặc thay đổi sai 401/403 | Không đổi response thành công; khóa chặt hành vi 401/403 của toàn bộ endpoint Admin hiện tại và tương lai. |
+| Exact-locale và public JSON leak tests | Ngăn fallback vô tình tiết lộ nội dung locale khác hoặc field đã ẩn | Public consumer phải xử lý 404/empty khi thiếu locale và field contact có thể vắng khỏi JSON. Draft/disclosure behavior cũ được giữ nguyên. |
+| Resume audit events 2704/2705 | Có dấu vết thay đổi current/publication mà không log dữ liệu CV nhạy cảm | Không đổi DTO, version hay transaction. Chỉ ghi log sau persistence thành công; lỗi/rollback không tạo audit thành công giả. |
+| Tách database runtime/migration roles | Giảm blast radius nếu API credential bị lộ và chặn đường truy cập vòng qua Supabase Data API | Connection production phải dùng login thuộc `portfolio_api`; pipeline migration dùng identity riêng. Repository/EF query hiện có tiếp tục chạy với DML được cấp. |
+| Storage bucket matrix | Ngăn client ghi/xóa trực tiếp và bảo vệ file chứng chỉ/CV | Public image URL vẫn ổn định; Certificate/CV tiếp tục dùng signed URL 5 phút; upload/delete vẫn chỉ đi qua API và compensation flow cũ. |
+
+Các thay đổi SQL/Storage là production gate, không được coi là đã áp dụng chỉ vì automated test pass. Release operator phải chạy smoke test và lưu bằng chứng theo `docs/security/SPRINT_9_SECURITY_CHECKLIST.md` trước khi phát hành.
+
+## 30. Cổng hoàn thành sprint và quy tắc đồng bộ tài liệu
 
 Một sprint backend chỉ được xem là **hoàn thành** khi đồng thời đáp ứng tất cả điều kiện sau:
 
