@@ -61,7 +61,8 @@ function Invoke-SetupValidation {
 
 $validEnvironment = @"
 ConnectionStrings__PostgreSql=Host=db.example.supabase.co;Port=5432;Database=postgres;Username=postgres;Password=database-secret;SSL Mode=Require
-Frontend__Origin=http://localhost:3000
+Frontend__Origins__0=https://localhost:44313
+Frontend__Origins__1=http://localhost:3000
 Jwt__Issuer=Portfolio.Api
 Jwt__Audience=Portfolio.Frontend
 Jwt__ActiveKeyId=test-key
@@ -113,6 +114,13 @@ try {
     Assert-NotContains $valid.Output "database-secret" "database password is not logged"
     Assert-NotContains $valid.Output "storage-secret" "Storage key is not logged"
 
+    $invalidSecondOrigin = Invoke-SetupValidation `
+        "invalid-second-origin" `
+        ($validEnvironment.Replace(
+            "Frontend__Origins__1=http://localhost:3000",
+            "Frontend__Origins__1=https://localhost:44313/swagger"))
+    Assert-Equal 1 $invalidSecondOrigin.ExitCode "invalid second frontend origin fails"
+
     $missingJwt = Invoke-SetupValidation `
         "missing-jwt-certificate" `
         ($validEnvironment.Replace(
@@ -129,7 +137,7 @@ try {
             "SupabaseStorage__ServiceRoleKey=replace-with-server-only-service-role-key"))
     Assert-Equal 1 $placeholderStorage.ExitCode "placeholder Storage key fails"
 
-    Write-Host "Setup-Local tests passed: 3."
+    Write-Host "Setup-Local tests passed: 4."
 }
 finally {
     if (Test-Path $testRoot) {

@@ -4,5 +4,5 @@ public sealed class FrontendOptions
 {
     public const string SectionName = "Frontend";
 
-    public string Origin { get; set; } = string.Empty;
+    public string[] Origins { get; set; } = [];
 }

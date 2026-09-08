@@ -30,4 +30,17 @@ public sealed class UploadOptionsValidatorTests
         Assert.True(result.Failed);
         Assert.Contains("Upload:MaxFileSize", result.FailureMessage, StringComparison.Ordinal);
     }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(21)]
+    public void ValidateRejectsUnsafeProjectGalleryCount(int maximumFiles)
+    {
+        var result = new UploadOptionsValidator().Validate(
+            null,
+            new UploadOptions { MaxProjectGalleryFiles = maximumFiles });
+
+        Assert.True(result.Failed);
+        Assert.Contains("Upload:MaxProjectGalleryFiles", result.FailureMessage, StringComparison.Ordinal);
+    }
 }

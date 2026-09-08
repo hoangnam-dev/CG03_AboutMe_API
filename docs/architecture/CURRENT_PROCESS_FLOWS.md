@@ -4,7 +4,7 @@
 
 ## 1. Phạm vi
 
-Tài liệu này mô tả hành vi runtime đã được triển khai, review và kiểm thử đến hết Sprint 4:
+Tài liệu này mô tả hành vi runtime đã được triển khai và kiểm thử đến hết Sprint 5:
 
 - thiết lập local, migration và bootstrap tài khoản Administrator;
 - đăng nhập Administrator và phát hành JWT;
@@ -16,18 +16,19 @@ Tài liệu này mô tả hành vi runtime đã được triển khai, review v�
 - thay thế Avatar và Hero image;
 - đọc/quản trị Skill Category và Technology, upload icon và sắp thứ tự;
 - đọc/quản trị Work Experience, Translation, Highlight, Technology link và sắp thứ tự;
+- đọc/quản trị Project, Translation, Highlight, Technology link, disclosure, gallery và sắp thứ tự;
 - xử lý lỗi tập trung và ranh giới dữ liệu nhạy cảm.
 
 Nguồn đối chiếu:
 
 - `scripts/Setup-Local.ps1`;
 - `src/Portfolio.Api/Program.cs` và các Controller;
-- `src/Portfolio.Application/Authentication`, `Dashboard`, `Profiles`, `About`, `Skills`, `Experiences`;
+- `src/Portfolio.Application/Authentication`, `Dashboard`, `Profiles`, `About`, `Skills`, `Experiences`, `Projects`;
 - `src/Portfolio.Infrastructure/Authentication`, `Persistence`, `Storage`;
 - `tests/Portfolio.UnitTests` và `tests/Portfolio.IntegrationTests`;
 - `docs/api/API_CONTRACT.md` và `docs/STORAGE.md`.
 
-Các phần Projects, Certificates, Resumes và Contacts có hợp đồng trong `API_CONTRACT.md` nhưng chưa thuộc runtime đã hoàn thành đến hết Sprint 4, vì vậy chưa được mô tả như chức năng đã hoàn thành ở đây.
+Các phần Certificates, Resumes và Contacts có hợp đồng trong `API_CONTRACT.md` nhưng chưa thuộc runtime đã hoàn thành đến hết Sprint 5, vì vậy chưa được mô tả như chức năng đã hoàn thành ở đây.
 
 ## 2. Data Flow Diagram — mức hệ thống
 
@@ -80,7 +81,7 @@ flowchart LR
 
 | Ranh giới | Dữ liệu được phép đi qua | Dữ liệu không được trả/log |
 | --- | --- | --- |
-| Public API | Published content, đúng locale, contact fields được cho phép | Draft, locale khác, hidden email/phone, object key, secret |
+| Public API | Published content, đúng locale, contact fields được cho phép, Project fields theo disclosure level | Draft, locale khác, hidden email/phone, limited Project fields, object key, secret |
 | Admin API | DTO quản trị sau khi JWT có role `Admin` được xác thực | Password, signing key, Storage service-role key |
 | PostgreSQL | Entity và object key bền vững | Signed URL tạm thời |
 | Supabase Storage | Bucket, server-generated object key, file bytes | Client-supplied storage path |
@@ -370,6 +371,7 @@ sequenceDiagram
     participant Service as AboutService
     participant Repo as AboutRepository
     participant DB as PostgreSQL
+    participant Handler as GlobalExceptionHandler
 
     Client->>Controller: slug và optional locale
     Controller->>Service: GetPublicAsync(slug, locale)
@@ -378,7 +380,10 @@ sequenceDiagram
     Repo->>DB: Query Profile slug, About isPublished và exact locale
     alt Profile/About/translation không tồn tại hoặc About là draft
         DB-->>Repo: null
-        Service-->>Client: 404 Problem Details
+        Repo-->>Service: null
+        Service-->>Controller: throw NotFoundException
+        Controller-->>Handler: exception propagates through ASP.NET pipeline
+        Handler-->>Client: 404 Problem Details
     else Published About tồn tại
         DB-->>Repo: Localized projection
         Repo-->>Service: AboutPublicProjection
@@ -827,7 +832,194 @@ sequenceDiagram
 
 `isCurrent` không phải trường client điều khiển; response luôn suy ra từ `endDate == null`. `endDate`, nếu có, phải lớn hơn hoặc bằng `startDate`. Highlight order chỉ cần duy nhất trong cùng cặp `(locale, highlightType)`; thứ tự Technology link được suy ra từ vị trí trong `technologyIds`.
 
-## 19. Xử lý lỗi tập trung
+## 19. Đọc Public Projects
+
+Endpoints:
+
+- `GET /api/v1/portfolio/{slug}/projects?locale=en`;
+- `GET /api/v1/portfolio/{slug}/projects/{projectSlug}?locale=en`.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Client as Public client
+    participant Controller as ProjectsController
+    participant Service as ProjectService
+    participant Repo as ProjectRepository
+    participant DB as PostgreSQL
+    participant Storage as Public Storage URL resolver
+
+    Client->>Controller: GET list hoặc detail với slug và locale
+    Controller->>Service: GetPublicListAsync hoặc GetPublicDetailAsync
+    Service->>Service: Normalize portfolio slug, project slug và locale
+    Service->>Repo: Public query với normalized slug và exact locale
+    Repo->>DB: Kiểm tra Profile slug tồn tại
+    alt Profile không tồn tại
+        Repo-->>Service: null
+        Service-->>Client: 404 Problem Details
+    else List
+        Repo->>DB: Project isPublished=true và có requested-locale translation
+        Note over Repo,DB: Order isFeatured DESC, displayOrder, id và chỉ published Technology/Category
+        DB-->>Repo: PublicProjectProjection[]
+        Service->>Storage: Chuyển thumbnail object key thành public URL
+        Service-->>Controller: PublicProjectListItem[]
+        Controller-->>Client: 200 ApiResponse
+    else Detail không tồn tại hoặc là draft
+        Repo->>DB: Query published Project bằng normalized project slug
+        DB-->>Repo: null
+        Service-->>Client: 404 Problem Details
+    else Detail disclosure full
+        Repo->>DB: Project detail projection với exact-locale highlights, technologies và images
+        DB-->>Repo: Full public projection
+        Service->>Storage: Chuyển thumbnail/image object keys thành public URLs
+        Service-->>Controller: PublicProjectDetail với full fields
+        Controller-->>Client: 200 ApiResponse
+    else Detail disclosure limited
+        Repo->>DB: Project detail projection đặt sensitive fields null và không query gallery payload
+        Note over Repo,DB: Omit repositoryUrl, demoUrl, clientContext, problem, solution, result và images
+        DB-->>Repo: Limited public projection
+        Service-->>Controller: PublicProjectDetail với null fields bị JsonIgnore
+        Controller-->>Client: 200 ApiResponse không có sensitive JSON properties
+    end
+```
+
+Public list/detail dùng DTO riêng với Admin DTO. Draft bị loại ngay trong repository predicate. Với Project `limited`, các property nhạy cảm bị loại ở server-side projection và tiếp tục bị bỏ ở serialization; frontend không chịu trách nhiệm che dữ liệu. Enum công khai dùng đúng giá trị camel-case `personal|professional` và `full|limited`.
+
+## 20. Quản trị Projects
+
+Endpoints:
+
+- `GET|POST /api/v1/admin/projects`;
+- `GET|PUT|DELETE /api/v1/admin/projects/{id}`;
+- `PATCH /api/v1/admin/projects/{id}/publish`;
+- `PATCH /api/v1/admin/projects/reorder`.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Admin as Administrator
+    participant Policy as AdminPolicy
+    participant Controller as AdminProjectsController
+    participant Service as ProjectService
+    participant Repo as ProjectRepository
+    participant DB as PostgreSQL
+    participant Storage as Supabase Storage
+    participant Log as Structured logger
+
+    Admin->>Policy: Request và Bearer JWT
+    Policy->>Controller: Authorized request
+    Controller->>Service: Admin Project operation
+    alt List hoặc detail
+        Service->>Service: Validate pagination/search khi list
+        Service->>Repo: Read AsNoTracking aggregate
+        Repo->>DB: Search internal/localized name, filter kind/publish, order và paginate
+        Service-->>Admin: 200 full admin DTO hoặc 404
+    else Create hoặc full aggregate update
+        Service->>Service: Validate slug, internal name, HTTPS URLs, dates và display order
+        Service->>Service: Validate translations, highlights, unique Technology IDs và image metadata
+        Service->>Repo: Check normalized global slug conflict và Technology existence
+        Repo->>DB: Parameterized EF queries
+        alt Thumbnail không thuộc gallery hoặc child metadata không hợp lệ
+            Service-->>Admin: 400 Problem Details
+        else Publish requested nhưng translation/alt text chưa đủ
+            Service-->>Admin: 400 Problem Details
+        else Slug đã tồn tại
+            Service-->>Admin: 409 Problem Details
+        else Hợp lệ
+            Service->>Repo: Add hoặc load tracked aggregate
+            Service->>Service: Merge translations, highlights, ordered links và gallery metadata
+            Service->>Repo: SaveChangesAsync()
+            Repo->>DB: Commit một EF Core unit of work
+            opt Update đã loại gallery images
+                Service->>Storage: Delete removed objects sau DB commit
+            end
+            Service->>Log: Project ID và create/update operation
+            Service-->>Admin: 201 hoặc 200 ApiResponse
+        end
+    else Publish hoặc unpublish
+        Service->>Repo: Load tracked aggregate
+        opt isPublished=true
+            Service->>Service: Require Project name en/vi và alt text en/vi cho mọi gallery image
+        end
+        Service->>Repo: Save publication state
+        Repo->>DB: Commit
+        Service-->>Admin: 200 full admin DTO
+    else Delete
+        Service->>Repo: Load tracked aggregate và giữ danh sách image object keys
+        Service->>Repo: Remove rồi SaveChangesAsync
+        Repo->>DB: Delete Project và cascade translations, highlights, links, image metadata
+        Service->>Storage: Delete image objects sau DB commit
+        Service->>Log: Project ID deleted
+        Service-->>Admin: 204 No Content
+    else Reorder
+        Service->>Service: Reject empty, negative hoặc duplicate IDs/orders
+        Service->>Repo: ReorderAsync(complete current set)
+        Repo->>DB: Serializable transaction rồi load all Projects
+        alt Set không đầy đủ/không khớp
+            Repo->>DB: Rollback/no changes
+            Service-->>Admin: 409 Problem Details
+        else Complete set
+            Repo->>DB: Update orders, SaveChanges rồi commit
+            Service->>Log: Reordered count
+            Service-->>Admin: 200 ApiResponse
+        end
+    end
+```
+
+Project slug được normalize trước khi kiểm tra unique toàn cục vì MVP chỉ có một Portfolio. `thumbnailImageId` phải trỏ đến image còn thuộc cùng Project; database lưu object key tương ứng trong `thumbnail_url`, còn admin response chỉ trả public URL. Xóa Project hoặc loại image khỏi full replacement luôn commit metadata trước rồi mới xóa Storage object.
+
+## 21. Upload Project gallery và compensation
+
+Endpoint: `POST /api/v1/admin/projects/{id}/images`
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Admin as Administrator
+    participant Controller as AdminProjectsController
+    participant Service as ProjectService
+    participant Validator as File and metadata validation
+    participant Repo as ProjectRepository
+    participant Storage as Supabase Storage
+    participant DB as PostgreSQL
+    participant Log as Structured logger
+
+    Admin->>Controller: multipart files + metadata JSON + Bearer JWT
+    Controller->>Controller: Parse metadata và map fileIndex theo zero-based file order
+    Controller->>Service: UploadGalleryAsync(projectId, files, metadata)
+    Service->>Validator: Validate 1..configured count, unique fileIndex/order và altText en/vi
+    Service->>Repo: Load tracked Project aggregate
+    alt Project không tồn tại
+        Service-->>Admin: 404 Problem Details
+    end
+    loop Mọi file trước khi upload
+        Service->>Validator: Validate non-empty, size, PNG/JPEG/WebP extension, MIME và signature
+    end
+    loop Mỗi validated file
+        Service->>Service: Generate projects/{projectId}/{uuid}.{extension}
+        Service->>Storage: Upload object
+        alt Upload hiện tại thất bại
+            Service->>Storage: Best-effort delete mọi object đã upload trong request
+            Service-->>Admin: Safe provider error
+        end
+    end
+    Service->>Repo: Add ProjectImage + alt translations rồi SaveChangesAsync
+    Repo->>DB: Commit gallery metadata
+    alt Persistence thất bại
+        Service->>Storage: Best-effort delete mọi object mới
+        Service->>Log: Log reconciliation error nếu compensation delete thất bại
+        Service-->>Admin: Preserve persistence error
+    else Commit thành công
+        Service->>Storage: Resolve public image URLs
+        Service->>Log: Project ID và uploaded count
+        Service-->>Controller: Public image DTOs, không có object keys
+        Controller-->>Admin: 200 ApiResponse
+    end
+```
+
+Mặc định mỗi request nhận tối đa 10 file và cấu hình bị chặn ở khoảng 1–20. Tất cả file được validate trước lần upload đầu tiên. Nếu một upload ở giữa batch hoặc DB commit thất bại, service cố gắng xóa toàn bộ object mới của request bằng cancellation token độc lập để client cancellation không bỏ dở compensation.
+
+## 22. Xử lý lỗi tập trung
 
 ```mermaid
 flowchart LR
@@ -851,7 +1043,7 @@ flowchart LR
 
 Chỉ validation error có `errors` theo field. Mọi Problem Details có `requestId`. Unexpected exception được log server-side nhưng response không chứa stack trace, SQL/provider detail hoặc secret.
 
-## 20. Ma trận endpoint và data store
+## 23. Ma trận endpoint và data store
 
 | Endpoint | Quyền | Service | Data store/adapter chính | Public disclosure |
 | --- | --- | --- | --- | --- |
@@ -892,16 +1084,28 @@ Chỉ validation error có `errors` theo field. Mọi Problem Details có `reque
 | `PUT /api/v1/admin/experiences/{id}` | Admin | `ExperienceService` | PostgreSQL | Atomic full aggregate replacement |
 | `DELETE /api/v1/admin/experiences/{id}` | Admin | `ExperienceService` | PostgreSQL | Aggregate children cascade theo FK |
 | `PATCH /api/v1/admin/experiences/reorder` | Admin | `ExperienceService` | PostgreSQL transaction | Atomic complete-set reorder |
+| `GET /api/v1/portfolio/{slug}/projects` | Anonymous | `ProjectService` | PostgreSQL + public Storage URL resolver | Published list, exact locale, không có admin/sensitive fields |
+| `GET /api/v1/portfolio/{slug}/projects/{projectSlug}` | Anonymous | `ProjectService` | PostgreSQL + public Storage URL resolver | Full/limited server-side disclosure projection |
+| `GET /api/v1/admin/projects` | Admin | `ProjectService` | PostgreSQL | Search/filter/pagination; full aggregate DTO |
+| `POST /api/v1/admin/projects` | Admin | `ProjectService` | PostgreSQL | Normalized global slug, validated aggregate create |
+| `GET /api/v1/admin/projects/{id}` | Admin | `ProjectService` | PostgreSQL | Full translations/highlights/technology/image metadata |
+| `PUT /api/v1/admin/projects/{id}` | Admin | `ProjectService` | PostgreSQL + Supabase Storage | Full replacement; removed objects deleted post-commit |
+| `DELETE /api/v1/admin/projects/{id}` | Admin | `ProjectService` | PostgreSQL + Supabase Storage | Metadata cascade trước, object cleanup sau commit |
+| `PATCH /api/v1/admin/projects/{id}/publish` | Admin | `ProjectService` | PostgreSQL | Publish yêu cầu names và toàn bộ image alt text en/vi |
+| `PATCH /api/v1/admin/projects/reorder` | Admin | `ProjectService` | PostgreSQL transaction | Atomic complete-set reorder |
+| `POST /api/v1/admin/projects/{id}/images` | Admin | `ProjectService` | PostgreSQL + Supabase Storage | Batch validation/compensation; trả public URLs, không trả object keys |
 
-## 21. Điểm cần lưu ý khi vận hành
+## 24. Điểm cần lưu ý khi vận hành
 
 - Swagger phản ánh endpoint thực tế và chỉ bật trong Development tại `/swagger`.
 - `docs/api/API_CONTRACT.md` là hợp đồng cho toàn MVP, bao gồm cả endpoint của sprint tương lai; không dùng riêng file đó để suy luận rằng mọi endpoint đã được triển khai.
 - Public images dùng bucket public-read/server-write. Storage service-role key chỉ tồn tại phía backend.
 - Các cột database `profiles.avatar_url` và `profiles.hero_image_url` hiện lưu object key theo Storage contract; public URL được tạo khi map response.
+- Các cột `project_images.image_url` và `projects.thumbnail_url` lưu object key; public/admin DTO tạo public URL bằng bucket `project-images`.
+- Public Project `limited` không trả repository/demo URL, gallery, client context, problem, solution hoặc result; không được bổ sung frontend fallback làm lộ các trường này.
 - PostgreSQL integration tests cần Docker và image `postgres:17-alpine`.
 
-## 22. Cổng hoàn thành sprint và quy tắc đồng bộ tài liệu
+## 25. Cổng hoàn thành sprint và quy tắc đồng bộ tài liệu
 
 Một sprint backend chỉ được xem là **hoàn thành** khi đồng thời đáp ứng tất cả điều kiện sau:
 
