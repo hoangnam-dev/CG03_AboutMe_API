@@ -5,6 +5,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using Portfolio.Application.About;
 using Portfolio.Application.Authentication;
+using Portfolio.Application.Certificates;
 using Portfolio.Application.Common.Authentication;
 using Portfolio.Application.Common.Storage;
 using Portfolio.Application.Dashboard;
@@ -125,6 +126,7 @@ public static class DependencyInjection
             services.AddScoped<IDashboardRepository, DashboardRepository>();
             services.AddScoped<IProfileRepository, ProfileRepository>();
             services.AddScoped<IAboutRepository, AboutRepository>();
+            services.AddScoped<ICertificateRepository, CertificateRepository>();
             services.AddScoped<IExperienceRepository, ExperienceRepository>();
             services.AddScoped<IProjectRepository, ProjectRepository>();
             services.AddScoped<ISkillRepository, SkillRepository>();
@@ -138,6 +140,7 @@ public static class DependencyInjection
             services.AddScoped<IDashboardRepository, DatabaseUnavailableDashboardRepository>();
             services.AddScoped<IProfileRepository, DatabaseUnavailableProfileRepository>();
             services.AddScoped<IAboutRepository, DatabaseUnavailableAboutRepository>();
+            services.AddScoped<ICertificateRepository, DatabaseUnavailableCertificateRepository>();
             services.AddScoped<IExperienceRepository, DatabaseUnavailableExperienceRepository>();
             services.AddScoped<IProjectRepository, DatabaseUnavailableProjectRepository>();
             services.AddScoped<ISkillRepository, DatabaseUnavailableSkillRepository>();

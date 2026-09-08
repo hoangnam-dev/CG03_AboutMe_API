@@ -383,48 +383,103 @@ When a known application exception appears under a debugger, verify the final HT
 
 - **Status:** Resolved
 - **Area:** API
-- **Feature:** About
+- **Feature:** Shared (Profile, About, Skills, Experiences, Projects, Certificates)
 - **First observed:** 2026-09-08
 - **Last updated:** 2026-09-08
 - **Tags:** `swagger`, `openapi`, `dictionary`, `localization`, `validation`
 
 ### Symptom
 
-Swagger UI generated `additionalProp1`, `additionalProp2`, and `additionalProp3` as keys under `translations` for `PUT /api/v1/admin/about`. Sending that example returned HTTP 400 because the API accepts only `en` and `vi`.
+Swagger UI generated `additionalProp1`, `additionalProp2`, and `additionalProp3` under `translations`. The first fix covered only `PUT /api/v1/admin/about`; Profile, Skills, Experiences, Projects, and Certificates continued to advertise invalid payloads even though every feature accepts only `en` and `vi`. Other JSON request bodies also relied on generic Swagger placeholders instead of contract-valid examples.
 
 ### Root cause
 
-`AboutUpdateRequest.Translations` is an `IReadOnlyDictionary<string, AboutTranslationRequest>`. Its C# type permits arbitrary string keys, so the generated OpenAPI schema could not infer the application's finite locale set and Swagger UI displayed generic dictionary placeholders.
+The localized write DTOs expose `Translations` as `IReadOnlyDictionary<string, TTranslation>`. The CLR type permits arbitrary string keys, so generated OpenAPI cannot infer the application's finite locale set and Swagger UI displays generic dictionary placeholders. Swashbuckle also does not invent domain-valid values for dates, URLs, enum-like strings, related IDs, or nested collection rules.
 
 ### Why it happened
 
-Runtime validation constrained the keys, but the OpenAPI documentation did not express or override that business rule. The generated example therefore contradicted the actual API contract.
+Runtime validation constrained the keys, but OpenAPI documentation did not express or override that business rule. The initial operation filter was tied specifically to `AboutUpdateRequest`, so it corrected one symptom without auditing the same DTO pattern across the other controllers.
 
 ### Correct fix
 
-Register an operation filter for endpoints accepting `AboutUpdateRequest` and provide an explicit request example containing complete `en` and `vi` translations. Keep runtime validation as the enforcement boundary.
+Register one centralized `RequestExampleOperationFilter` that selects a literal, contract-valid example from the controller request parameter type. Cover every implemented JSON request operation and use explicit `translations.en`/`translations.vi` objects. Keep runtime validation as the enforcement boundary.
 
 ### Prevention rule
 
-Whenever a request uses a dictionary whose keys are restricted by business rules, add an explicit valid OpenAPI example or schema constraint and a regression test proving Swagger does not advertise unsupported placeholder keys.
+Whenever a new JSON request body is added, add its contract-valid example to the centralized filter and regression matrix. For dictionaries restricted by business rules, use explicit valid keys and recursively reject `additionalProp*`; do not add one-off feature filters for a shared failure pattern.
 
 ### Regression test
 
-`tests/Portfolio.IntegrationTests/Api/ProfileAboutApiTests.cs` — `SwaggerAboutUpdateExampleUsesSupportedLocales` verifies the published request example contains `en` and `vi` and excludes `additionalProp1`.
+`tests/Portfolio.IntegrationTests/Api/ApiFoundationTests.cs` — `SwaggerEveryJsonRequestBodyHasContractExample` enumerates all implemented `application/json` operations, verifies exact root request fields, requires `en`/`vi` translation keys, and recursively rejects `additionalProp*`. The original `SwaggerAboutUpdateExampleUsesSupportedLocales` test remains as focused About coverage.
 
 ### Verification
 
-- The focused Swagger regression test passed: 1 succeeded, 0 failed.
+- Before the fix, the repository-wide regression test failed because most JSON media types had no explicit `example`.
+- After the fix, the focused repository-wide Swagger regression test passed: 1 succeeded, 0 failed.
+- The non-PostgreSQL integration suite passed: 113 succeeded, 0 failed.
+- Unit tests passed: 97 succeeded, 0 failed.
 
 ### Relevant files
 
-- `src/Portfolio.Api/OpenApi/AboutUpdateRequestExampleOperationFilter.cs`
+- `src/Portfolio.Api/OpenApi/RequestExampleOperationFilter.cs`
 - `src/Portfolio.Api/Extensions/ServiceCollectionExtensions.cs`
+- `tests/Portfolio.IntegrationTests/Api/ApiFoundationTests.cs`
 - `tests/Portfolio.IntegrationTests/Api/ProfileAboutApiTests.cs`
 
 ### Related lessons
 
 - BUG-2026-006
+
+---
+
+## BUG-2026-009 — Certificate upload replaced the wrong evidence slot
+
+- **Status:** Resolved
+- **Area:** Application | Storage
+- **Feature:** Certificates
+- **First observed:** 2026-09-08
+- **Last updated:** 2026-09-08
+- **Tags:** `file-replacement`, `object-storage`, `partial-failure`, `contract-mapping`
+
+### Symptom
+
+Uploading a PDF certificate evidence file cleared and deleted an existing certificate image, even though the schema and API contract expose independent file and image fields.
+
+### Root cause
+
+The replacement flow treated `certificates.file_url` and `certificates.image_url` as two representations of one storage slot instead of two independent slots selected by validated content type.
+
+### Why it happened
+
+The singular upload route was mistaken for singular persisted evidence. The content-type rule that updates the appropriate field was not carried through to old-object selection and cleanup.
+
+### Correct fix
+
+PDF uploads replace only `file_url`; PNG/JPEG/WebP uploads replace only `image_url`. Persist the selected new key before deleting only the previous object from that same slot, and sign both retained slots independently in read responses.
+
+### Prevention rule
+
+When one upload endpoint dispatches to multiple storage-backed columns by content type, replace and clean up only the selected column; never clear sibling storage slots unless the contract explicitly defines mutual exclusion.
+
+### Regression test
+
+`tests/Portfolio.UnitTests/Certificates/CertificateServiceTests.cs` — `UploadingPdfPreservesExistingImageEvidence` and `AdminResponseSignsFileAndImageEvidenceIndependently`.
+
+### Verification
+
+- Certificate service tests passed: 9 succeeded, 0 failed.
+- Certificate API tests passed: 7 succeeded, 0 failed.
+- Release build passed with 0 warnings and 0 errors.
+
+### Relevant files
+
+- `src/Portfolio.Application/Certificates/CertificateService.cs`
+- `src/Portfolio.Application/Certificates/CertificateContracts.cs`
+- `tests/Portfolio.UnitTests/Certificates/CertificateServiceTests.cs`
+
+### Related lessons
+
+- None.
 
 ---
 

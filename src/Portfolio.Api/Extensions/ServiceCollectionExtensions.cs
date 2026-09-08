@@ -14,6 +14,7 @@ using Portfolio.Api.Authorization;
 using Portfolio.Api.Configuration;
 using Portfolio.Api.Errors;
 using Portfolio.Api.OpenApi;
+using Portfolio.Application.Certificates;
 using Portfolio.Application.Common.Authentication;
 using Portfolio.Application.Profiles;
 using Portfolio.Application.Projects;
@@ -64,6 +65,16 @@ public static class ServiceCollectionExtensions
                 bucket,
                 uploads.MaxFileSize,
                 uploads.MaxProjectGalleryFiles);
+        });
+        services.AddSingleton(provider =>
+        {
+            var uploads = provider.GetRequiredService<IOptions<UploadOptions>>().Value;
+            var bucket = configuration[$"{SupabaseStorageOptions.SectionName}:Buckets:CertificateFiles"]
+                ?? "certificate-files";
+            return new CertificateEvidenceSettings(
+                bucket,
+                uploads.MaxFileSize,
+                TimeSpan.FromMinutes(5));
         });
         services.AddSingleton<IValidateOptions<SkillIconOptions>, SkillIconOptionsValidator>();
         services.AddOptions<SkillIconOptions>()
@@ -259,7 +270,7 @@ public static class ServiceCollectionExtensions
                 [new OpenApiSecuritySchemeReference(bearerScheme, document)] = [],
             });
             options.OperationFilter<AllowAnonymousOperationFilter>();
-            options.OperationFilter<AboutUpdateRequestExampleOperationFilter>();
+            options.OperationFilter<RequestExampleOperationFilter>();
         });
         return services;
     }
