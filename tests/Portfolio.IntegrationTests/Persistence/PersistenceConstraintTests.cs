@@ -51,4 +51,24 @@ public sealed class PersistenceConstraintTests(PostgreSqlFixture database)
         Assert.Equal(PostgresErrorCodes.CheckViolation, postgres.SqlState);
         Assert.Equal("ck_social_links_display_order", postgres.ConstraintName);
     }
+
+    [Fact]
+    public async Task RejectsUnsupportedContactStatus()
+    {
+        await database.ResetApplicationDataAsync(TestContext.Current.CancellationToken);
+        await using var context = database.CreateDbContext();
+
+        var exception = await Assert.ThrowsAsync<PostgresException>(() =>
+            context.Database.ExecuteSqlRawAsync(
+                """
+                INSERT INTO contact_messages
+                    (sender_name, sender_email, subject, message, status)
+                VALUES
+                    ('Fictional Visitor', 'visitor@example.com', 'Inquiry', 'Hello', 'deleted');
+                """,
+                TestContext.Current.CancellationToken));
+
+        Assert.Equal(PostgresErrorCodes.CheckViolation, exception.SqlState);
+        Assert.Equal("ck_contact_messages_status", exception.ConstraintName);
+    }
 }

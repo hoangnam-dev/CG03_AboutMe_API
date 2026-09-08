@@ -1,10 +1,10 @@
 # CG03 AboutMe — Luồng xử lý hiện tại
 
-Để học cách tự triển khai một feature Controller–Service–Repository, xem [Backend Onboarding Guide](NEW_MEMBER_BACKEND_GUIDE.md). Chi tiết Identity tables, Admin bootstrap, login và JWT nằm tại [Authentication Guide](../security/AUTHENTICATION_GUIDE.md).
+Để học cách tự triển khai một feature Controller–Service–Repository, xem [Backend Onboarding Guide](NEW_MEMBER_BACKEND_GUIDE.md). Chi tiết Identity tables, Admin bootstrap, login và JWT nằm tại [Authentication Guide](../security/AUTHENTICATION_GUIDE.md). Cách thiết kế, cấu hình và kiểm thử rate limiting được trình bày tại [Rate Limiting Guide](RATE_LIMITING_GUIDE.md).
 
 ## 1. Phạm vi
 
-Tài liệu này mô tả hành vi runtime đã được triển khai đến hết Sprint 7; các kiểm thử PostgreSQL cần Docker đang chạy:
+Tài liệu này mô tả hành vi runtime đã được triển khai đến hết Sprint 8; các kiểm thử PostgreSQL cần Docker đang chạy:
 
 - thiết lập local, migration và bootstrap tài khoản Administrator;
 - đăng nhập Administrator và phát hành JWT;
@@ -19,18 +19,18 @@ Tài liệu này mô tả hành vi runtime đã được triển khai đến h�
 - đọc/quản trị Project, Translation, Highlight, Technology link, disclosure, gallery và sắp thứ tự;
 - đọc/quản trị Certificate, Translation, Technology link, quyền hiển thị credential và minh chứng riêng tư;
 - upload/quản trị Resume version, chuyển bản current và cung cấp CV hiện hành bằng signed URL;
+- tiếp nhận Contact công khai có rate limit, body-size limit, validation, honeypot và notification best effort;
+- quản trị Contact inbox: lọc/tìm kiếm/phân trang, xem chi tiết, đổi trạng thái và xóa;
 - xử lý lỗi tập trung và ranh giới dữ liệu nhạy cảm.
 
 Nguồn đối chiếu:
 
 - `scripts/Setup-Local.ps1`;
 - `src/Portfolio.Api/Program.cs` và các Controller;
-- `src/Portfolio.Application/Authentication`, `Dashboard`, `Profiles`, `About`, `Skills`, `Experiences`, `Projects`, `Certificates`, `Resumes`;
-- `src/Portfolio.Infrastructure/Authentication`, `Persistence`, `Storage`;
+- `src/Portfolio.Application/Authentication`, `Dashboard`, `Profiles`, `About`, `Skills`, `Experiences`, `Projects`, `Certificates`, `Resumes`, `Contacts`;
+- `src/Portfolio.Infrastructure/Authentication`, `Persistence`, `Storage`, `Notifications`;
 - `tests/Portfolio.UnitTests` và `tests/Portfolio.IntegrationTests`;
 - `docs/api/API_CONTRACT.md` và `docs/STORAGE.md`.
-
-Phần Contacts có hợp đồng trong `API_CONTRACT.md` nhưng chưa thuộc runtime đã hoàn thành đến hết Sprint 7, vì vậy chưa được mô tả như chức năng đã hoàn thành ở đây.
 
 ## 2. Data Flow Diagram — mức hệ thống
 
@@ -46,6 +46,7 @@ flowchart LR
     App[Application services]
     Repo[Feature repositories]
     StorageAdapter[Supabase Storage adapter]
+    ContactNotifier[Contact notification adapter]
     ErrorHandler[Global exception handler]
 
     Config[(.env or User Secrets)]
@@ -58,7 +59,7 @@ flowchart LR
     Setup -->|validated process settings| Config
     Setup -->|optional EF migrations| Portfolio
 
-    Public -->|anonymous GET with slug and locale| API
+    Public -->|anonymous public GET or Contact POST| API
     Admin -->|login credentials or Bearer JWT| API
     Config -->|startup configuration| API
 
@@ -69,6 +70,8 @@ flowchart LR
     Repo -->|EF Core queries and writes| Portfolio
     App --> StorageAdapter
     StorageAdapter -->|server-authorized upload, delete and signed read| Objects
+    App -->|notify only after Contact persistence| ContactNotifier
+    ContactNotifier -->|MVP logs Contact ID only| Logs
 
     App -->|resource IDs and operation events| Logs
     API --> ErrorHandler
@@ -1212,7 +1215,138 @@ sequenceDiagram
 
 Toàn bộ endpoint `/api/v1/admin/cv` yêu cầu `AdminPolicy`: thiếu hoặc JWT không hợp lệ trả 401, còn tài khoản không có role Admin trả 403 trước khi vào Controller. Đổi publication hoặc current không tạo version mới. Partial unique index `ux_resumes_one_active_per_language` bảo vệ invariant tối đa một Resume Active cho mỗi ngôn ngữ ở database; application rule bổ sung rằng Resume Active phải Published.
 
-## 25. Xử lý lỗi tập trung
+## 25. Contact submission và quản trị inbox
+
+Hướng dẫn nhập môn về thuật toán, partition key, cấu hình, reverse proxy và kiểm thử nằm tại [Rate Limiting Guide](RATE_LIMITING_GUIDE.md). Section này tập trung vào behavior runtime của Contact trong Sprint 8.
+
+### Public Contact submission
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Visitor as Public visitor
+    participant Limiter as ContactSubmission rate limiter
+    participant Size as ContactRequestSizeMiddleware
+    participant Controller as ContactsController
+    participant Service as ContactService
+    participant Repo as ContactRepository
+    participant DB as PostgreSQL
+    participant Notifier as IContactNotifier
+    participant Log as Structured log
+
+    Visitor->>Limiter: POST /api/v1/contact
+    alt Hết quota theo connection IP
+        Limiter-->>Visitor: 429 Problem Details + Retry-After nếu có
+    else Còn quota
+        Limiter->>Size: Chuyển request tiếp
+        alt Body lớn hơn 65,536 bytes
+            Size-->>Visitor: 413 Problem Details
+        else Body trong giới hạn
+            Size->>Controller: Buffered body
+            alt Model binding/DTO validation lỗi
+                Controller-->>Visitor: 400 Validation Problem
+            else DTO hợp lệ
+                Controller->>Service: Request + SHA-256 IP hash + User-Agent
+                Service->>Service: Trim, validate và kiểm tra honeypot website
+                Service->>Repo: Add Contact status=New
+                Repo->>DB: SaveChangesAsync
+                alt Persistence thất bại
+                    DB-->>Visitor: 500/503 Problem Details qua exception handler
+                else Persist thành công và honeypot có dữ liệu
+                    Service->>Log: Contact ID + isSpam=true
+                    Service-->>Controller: Receipt
+                    Controller-->>Visitor: 201 Message received
+                else Persist thành công và không phải spam
+                    Service->>Notifier: NotifyAsync sau commit
+                    alt Notification thất bại
+                        Service->>Log: Warning chỉ chứa Contact ID
+                    end
+                    Service-->>Controller: Receipt
+                    Controller-->>Visitor: 201 Message received
+                end
+            end
+        end
+    end
+```
+
+Named policy `ContactSubmission` dùng fixed window, partition theo `HttpContext.Connection.RemoteIpAddress` đã chuẩn hóa, `QueueLimit=0` và tự replenishment. Giá trị mặc định/production là 5 request trong 60 giây; Development dùng 20 request trong 60 giây. Request vượt quota bị từ chối trước khi body được buffer hoặc gọi Service.
+
+Ứng dụng không tin trực tiếp `X-Forwarded-For`. Nếu production chạy sau reverse proxy, phải thiết lập trusted proxy/network và Forwarded Headers Middleware trước khi kỳ vọng `RemoteIpAddress` là IP visitor; nếu chưa làm, quota có thể áp dụng cho IP proxy. Raw IP không được lưu. Controller chuẩn hóa IPv4-mapped IPv6 rồi lưu lowercase SHA-256 hash; User-Agent được Service trim và giới hạn 500 ký tự.
+
+DTO và Application cùng bảo vệ các giới hạn quan trọng: `senderName` 150, `senderEmail` 320 và đúng định dạng email, `subject` 200, `message` 5,000, `website` 200 ký tự. `website` là honeypot: khi có dữ liệu, Service vẫn persist record với `isSpam=true` và trả cùng receipt `201` như submission bình thường, nhưng không gọi notifier. Cách trả giống nhau tránh cung cấp tín hiệu giúp bot điều chỉnh hành vi.
+
+Persistence là bước bắt buộc; notification chỉ là side effect best effort sau commit. Nếu notification thất bại, message không bị rollback và client vẫn nhận `201`. MVP dùng `LoggingContactNotifier`, chưa gửi nội dung sang email provider. Response thành công chỉ có `id` và `receivedAt`, không echo tên, email, subject hoặc message.
+
+### Đọc Contact inbox
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Admin as Administrator
+    participant Auth as Authentication + AdminPolicy
+    participant Controller as AdminContactsController
+    participant Service as ContactService
+    participant Repo as ContactRepository
+    participant DB as PostgreSQL
+
+    Admin->>Auth: GET /api/v1/admin/contacts?page&pageSize&status&search
+    alt Thiếu/không hợp lệ hoặc không có role Admin
+        Auth-->>Admin: 401 hoặc 403 Problem Details
+    else Được phép
+        Auth->>Controller: Authorized request
+        Controller->>Service: ContactAdminQuery
+        alt page < 1, pageSize ngoài 1..100, status/search không hợp lệ
+            Service-->>Admin: 400 Validation Problem
+        else Query hợp lệ
+            Service->>Repo: GetPageAsync
+            Repo->>DB: Optional status + ILIKE name/email/subject + SQL pagination
+            DB-->>Repo: Items + total, order CreatedAt desc rồi Id
+            Repo-->>Service: ContactMessagePage
+            Service-->>Controller: Admin DTO page
+            Controller-->>Admin: 200 data + pagination meta
+        end
+    end
+```
+
+List query dùng `AsNoTracking()`, filter và pagination trong PostgreSQL. `search` được áp dụng case-insensitive cho sender name, sender email và subject; message body không thuộc search scope. `GET /api/v1/admin/contacts/{id}` cũng là read-only và **không tự chuyển** status sang `Read`; resource không tồn tại trả 404.
+
+Public route không có inbox read endpoint. `GET /api/v1/contact` trả 405, còn toàn bộ `/api/v1/admin/contacts` yêu cầu `AdminPolicy`.
+
+### Đổi trạng thái và xóa Contact
+
+```mermaid
+flowchart TD
+    Request[Admin PATCH contact status]
+    Auth{JWT và AdminPolicy hợp lệ?}
+    Validate{Status là New, Read hoặc Archived?}
+    Load{Contact tồn tại?}
+    Transition{Trạng thái đích}
+    Save[(SaveChangesAsync)]
+    Done[200 Contact status updated]
+
+    Request --> Auth
+    Auth -->|Không| EAuth[401 hoặc 403]
+    Auth -->|Có| Validate
+    Validate -->|Không| E400[400 Validation Problem]
+    Validate -->|Có| Load
+    Load -->|Không| E404[404 Problem Details]
+    Load -->|Có| Transition
+    Transition -->|Read| Set[Đặt ReadAt nếu đang null]
+    Transition -->|New| Clear[Xóa ReadAt]
+    Transition -->|Archived| Keep[Giữ nguyên ReadAt]
+    Set --> Save
+    Clear --> Save
+    Keep --> Save
+    Save --> Done
+```
+
+`PATCH /api/v1/admin/contacts/{id}/status` chỉ nhận `New`, `Read` hoặc `Archived`. Chuyển sang `Read` đặt `readAt` theo UTC nếu chưa có; patch `Read` lặp lại không ghi đè thời điểm đọc đầu tiên. Chuyển về `New` xóa `readAt`; chuyển sang `Archived` giữ nguyên giá trị hiện có.
+
+`DELETE /api/v1/admin/contacts/{id}` thực hiện hard delete và trả 204; ID không tồn tại trả 404. Không có Storage object hoặc notification compensation trong delete flow.
+
+Dashboard đếm mọi Contact có `status=New`. `isSpam` là cờ độc lập, vì vậy spam vẫn thuộc số đếm New cho đến khi Administrator đổi trạng thái hoặc xóa record.
+
+## 26. Xử lý lỗi tập trung
 
 ```mermaid
 flowchart LR
@@ -1236,7 +1370,7 @@ flowchart LR
 
 Chỉ validation error có `errors` theo field. Mọi Problem Details có `requestId`. Unexpected exception được log server-side nhưng response không chứa stack trace, SQL/provider detail hoặc secret.
 
-## 26. Ma trận endpoint và data store
+## 27. Ma trận endpoint và data store
 
 | Endpoint | Quyền | Service | Data store/adapter chính | Public disclosure |
 | --- | --- | --- | --- | --- |
@@ -1249,6 +1383,11 @@ Chỉ validation error có `errors` theo field. Mọi Problem Details có `reque
 | `POST /api/v1/auth/logout-all` | Authenticated + CSRF | `AuthService` | PostgreSQL session/token, `AspNetUsers` | Revoke mọi session, tăng auth version |
 | `GET /api/v1/auth/sessions` | Authenticated | `AuthService` | PostgreSQL session | Chỉ session của current user, không trả token/hash |
 | `DELETE /api/v1/auth/sessions/{sessionId}` | Authenticated + CSRF | `AuthService` | PostgreSQL session/token | Scope bằng current user, chống IDOR |
+| `POST /api/v1/contact` | Anonymous + named rate limit | `ContactService` | PostgreSQL + `IContactNotifier` | 201 receipt không echo PII; 429 khi hết quota; honeypot vẫn cùng response shape |
+| `GET /api/v1/admin/contacts` | Admin | `ContactService` | PostgreSQL | Filter/search/SQL pagination; inbox không public |
+| `GET /api/v1/admin/contacts/{id}` | Admin | `ContactService` | PostgreSQL | Read-only, không tự đổi status |
+| `PATCH /api/v1/admin/contacts/{id}/status` | Admin | `ContactService` | PostgreSQL | New xóa `readAt`, Read set-once, Archived giữ `readAt` |
+| `DELETE /api/v1/admin/contacts/{id}` | Admin | `ContactService` | PostgreSQL | Hard delete, trả 204 |
 | `GET /api/v1/admin/dashboard` | Admin | `DashboardService` | PostgreSQL | Không public |
 | `GET /api/v1/portfolio/{slug}/profile` | Anonymous | `ProfileService` | PostgreSQL, public Storage URL resolver | Exact locale, published links, visibility flags |
 | `GET /api/v1/admin/profile` | Admin | `ProfileService` | PostgreSQL | Full admin DTO |
@@ -1301,7 +1440,7 @@ Chỉ validation error có `errors` theo field. Mọi Problem Details có `reque
 | `PATCH /api/v1/admin/cv/{id}/publish` | Admin | `ResumeService` | PostgreSQL | Không cho unpublish Resume Active; metadata update không tăng version |
 | `DELETE /api/v1/admin/cv/{id}` | Admin | `ResumeService` | PostgreSQL + private Supabase Storage | 409 khi Active; commit metadata trước rồi cleanup object |
 
-## 27. Điểm cần lưu ý khi vận hành
+## 28. Điểm cần lưu ý khi vận hành
 
 - Swagger phản ánh endpoint thực tế và chỉ bật trong Development tại `/swagger`.
 - `docs/api/API_CONTRACT.md` là hợp đồng cho toàn MVP, bao gồm cả endpoint của sprint tương lai; không dùng riêng file đó để suy luận rằng mọi endpoint đã được triển khai.
@@ -1311,9 +1450,11 @@ Chỉ validation error có `errors` theo field. Mọi Problem Details có `reque
 - Public Project `limited` không trả repository/demo URL, gallery, client context, problem, solution hoặc result; không được bổ sung frontend fallback làm lộ các trường này.
 - Resume object luôn nằm trong private bucket `cv-files`; chỉ public signed URL 5 phút được trả cho Resume Published và Active.
 - Resume version dùng năm tại `Asia/Ho_Chi_Minh` và counter độc lập theo language/year; sequence đã commit không được tái sử dụng sau khi xóa.
+- Contact rate limit mặc định/production là 5 request/60 giây theo IP kết nối và là in-memory per process; Development dùng 20/60. Deployment sau reverse proxy phải cấu hình trust boundary trước khi dùng forwarded client IP.
+- Request Contact lớn hơn 65,536 byte bị từ chối kể cả khi dùng chunked transfer. Notification chỉ chạy sau persistence và không quyết định response 201.
 - PostgreSQL integration tests cần Docker và image `postgres:17-alpine`.
 
-## 28. Cổng hoàn thành sprint và quy tắc đồng bộ tài liệu
+## 29. Cổng hoàn thành sprint và quy tắc đồng bộ tài liệu
 
 Một sprint backend chỉ được xem là **hoàn thành** khi đồng thời đáp ứng tất cả điều kiện sau:
 

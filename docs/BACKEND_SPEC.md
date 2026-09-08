@@ -656,6 +656,11 @@ Quy tắc:
 - Dùng honeypot hoặc Cloudflare Turnstile nếu spam tăng.
 - Public chỉ được tạo, không được đọc contact message.
 - Notification email là side effect; lỗi gửi email không được làm mất message đã lưu.
+- Request Contact tối đa 65.536 byte; rate limit chạy trước khi buffer body và trước persistence.
+- Partition chỉ dùng `RemoteIpAddress` đã chuẩn hóa hoặc partition `unknown`; không đọc trực tiếp header forwarding do client gửi.
+- Chỉ lưu SHA-256 lowercase của IP đã chuẩn hóa; không lưu/log raw IP hoặc nội dung Contact.
+- MVP dùng logging/no-op `IContactNotifier`; log lỗi notification chỉ chứa Contact ID.
+- Retention Contact là quy trình manual trong MVP; DELETE của Admin là hard delete.
 
 ### BE-09 — Admin CRUD
 
@@ -981,6 +986,7 @@ RateLimit__Auth__LoginPermitLimit
 RateLimit__Auth__RefreshPermitLimit
 RateLimit__Auth__WindowSeconds
 RateLimit__Contact__PermitLimit
+RateLimit__Contact__WindowSeconds
 ```
 
 Quy tắc:
