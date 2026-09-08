@@ -616,9 +616,11 @@ Anonymous request:
 }
 ```
 
-Validation: sender name 1-150; valid sender email max 320; subject 1-200; message 1-5000; honeypot `website` max 200. The named Contact rate limit runs before persistence. A filled honeypot is marked spam and receives the same external response shape/timing class as a normal submission.
+Validation: sender name 1-150; valid sender email max 320; subject 1-200; message 1-5000; honeypot `website` max 200; complete request body max 65,536 bytes. The named Contact rate limit runs before body buffering and persistence. A filled honeypot is marked spam and receives the same external response shape/timing class as a normal submission.
 
-Success: 201 with `{ "id": "...", "receivedAt": "2026-09-05T12:00:00Z" }` and message `Message received.` Submitted personal data is not echoed. Notification runs after persistence; notification failure is logged and does not change the 201 result.
+The limiter key uses the normalized connection `RemoteIpAddress`, with one bounded `unknown` partition when the address is absent. The application does not trust `X-Forwarded-For` directly. A deployment that forwards client addresses must configure its proxy trust boundary so only approved proxy networks can replace the connection address. The stored `ipHash` is lowercase SHA-256 of that normalized connection address; raw IP addresses are neither persisted nor returned.
+
+Success: 201 with `{ "id": "...", "receivedAt": "2026-09-05T12:00:00Z" }` and message `Message received.` Submitted personal data is not echoed. Notification runs after persistence; notification failure is logged without the provider exception or submitted personal data and does not change the 201 result. The MVP notifier is a logging/no-op implementation until a provider is approved.
 
 Errors: 400, 413, 429, and 500/503 only when persistence itself fails.
 
@@ -630,6 +632,8 @@ Errors: 400, 413, 429, and 500/503 only when persistence itself fails.
 | GET | `/api/v1/admin/contacts/{id}` | 200 | Complete message; read has no implicit status mutation |
 | PATCH | `/api/v1/admin/contacts/{id}/status` | 200 | Body `{ "status": "Read" }` |
 | DELETE | `/api/v1/admin/contacts/{id}` | 204 | Hard delete in MVP |
+
+Administrator Contact responses include the stored message, status, spam flag, timestamps, bounded user agent, and one-way IP hash. Retention is manual in MVP: administrators hard-delete messages according to the site's operating policy; no automatic retention job is configured.
 
 Status rules:
 

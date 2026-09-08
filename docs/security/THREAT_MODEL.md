@@ -134,6 +134,10 @@ Supabase Storage objects are changed only through the Storage API. Application c
 | PII leakage | Request/body logged | Serilog request metadata only; no bodies/email/message/IP raw value | Captured-log test |
 | Notification data loss | Email provider failure rolls back message | Persist first; notification is best-effort side effect | Service failure test |
 
+`POST /api/v1/contact` is capped at 65,536 bytes and each field has its own smaller semantic limit. Its named fixed-window limiter uses only the normalized connection `RemoteIpAddress`; arbitrary forwarding headers do not create partitions. Deployments may expose forwarded client addresses only through an explicitly trusted proxy/network configuration. The API stores lowercase SHA-256 of the normalized address and never stores or logs the raw address. Notification logs contain only the Contact Message ID and do not attach provider exceptions because provider text can contain submitted personal data.
+
+Contact Message retention is manual for the MVP. Administrator deletion is a hard delete; an automated retention job requires a separately approved duration and operational policy.
+
 ### Platform, error, and observability threats
 
 | Threat | Controls | Evidence |
