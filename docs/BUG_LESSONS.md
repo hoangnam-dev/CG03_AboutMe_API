@@ -30,6 +30,8 @@ Its purpose is regression prevention, not incident narration.
 | BUG-2026-009 | Resolved | Application / Storage | Certificates | Certificate upload replaced the wrong evidence slot | `file-replacement`, `object-storage`, `partial-failure`, `contract-mapping` |
 | BUG-2026-010 | Resolved | Testing / PostgreSQL | Resumes | Synchronous barrier blocked async concurrency test construction | `concurrency-test`, `async-deadlock`, `testcontainers` |
 | BUG-2026-011 | Resolved | PostgreSQL | Shared | Direct role revokes left inherited PUBLIC access | `postgresql`, `grants`, `public-role`, `supabase`, `data-api` |
+| BUG-2026-012 | Resolved | Docker | Shared | Docker publish omitted repository analyzer configuration | `docker`, `dotnet-publish`, `editorconfig`, `analyzers`, `generated-code` |
+| BUG-2026-013 | Resolved | Testing | Shared | Container smoke requests omitted the allowed frontend Origin | `docker`, `smoke-test`, `origin-validation`, `cors`, `rate-limit` |
 
 ---
 
@@ -647,3 +649,119 @@ List only verification actually performed.
 
 - BUG-YYYY-NNN
 -->
+
+---
+
+## BUG-2026-012 — Docker publish omitted repository analyzer configuration
+
+- **Status:** Resolved
+- **Area:** Docker
+- **Feature:** Shared
+- **First observed:** 2026-09-09
+- **Last updated:** 2026-09-09
+- **Tags:** `docker`, `dotnet-publish`, `editorconfig`, `analyzers`, `generated-code`
+
+### Symptom
+
+The Windows Release build passed, but `docker build` failed during Linux
+`dotnet publish` with CA1861 errors in generated EF Core migrations.
+
+### Root cause
+
+The Docker build stage copied `Directory.Build.props` but omitted the repository
+`.editorconfig`. The container therefore lost the rule that marks migration
+files as generated code and analyzed them differently from the host build.
+
+### Why it happened
+
+The restore-optimized Docker copy list was treated as package metadata only and
+did not include all repository-root compilation/analyzer inputs.
+
+### Correct fix
+
+Copy `.editorconfig` into the same repository-root location in the build stage
+before restoring and publishing.
+
+### Prevention rule
+
+When a Docker build uses selective `COPY`, include every root file that affects
+compilation, analyzers, generated-code classification, package resolution, or SDK selection.
+
+### Regression test
+
+`DeploymentAssetTests.DockerfileUsesDotNet10NonRootRuntimeOnPort8080` requires
+the Dockerfile to copy `.editorconfig`.
+
+### Verification
+
+- The regression test failed before the fix and passed after it.
+- `docker build --tag portfolio-api:sprint-10 .` completed successfully after the fix.
+
+### Relevant files
+
+- `Dockerfile`
+- `.editorconfig`
+- `tests/Portfolio.IntegrationTests/Deployment/DeploymentAssetTests.cs`
+
+### Related lessons
+
+- BUG-2026-002
+
+---
+
+## BUG-2026-013 — Container smoke requests omitted the allowed frontend Origin
+
+- **Status:** Resolved
+- **Area:** Testing
+- **Feature:** Shared
+- **First observed:** 2026-09-09
+- **Last updated:** 2026-09-09
+- **Tags:** `docker`, `smoke-test`, `origin-validation`, `cors`, `rate-limit`
+
+### Symptom
+
+The container started and liveness passed, but unsafe auth/contact smoke calls
+returned HTTP 403 before they could verify validation or contact throttling.
+
+### Root cause
+
+The smoke container had no matching frontend origin configuration and the HTTP
+client did not send an `Origin` header. `AuthOriginValidationMiddleware`
+correctly rejected the requests before endpoint validation and rate limiting.
+
+### Why it happened
+
+The operational test modeled ordinary HTTP requests but omitted an application
+security prerequisite that browser-originated unsafe requests must satisfy.
+
+### Correct fix
+
+Configure one explicit smoke-only frontend origin and send the matching Origin
+header. Require the deployed smoke caller to supply its real configured frontend origin.
+
+### Prevention rule
+
+Operational smoke tests for unsafe endpoints must satisfy origin validation
+explicitly; never weaken or bypass the middleware to reach downstream checks.
+
+### Regression test
+
+`DeploymentAssetTests.SmokeScriptsSendAnExplicitAllowedFrontendOrigin` verifies
+both local and deployed smoke contracts. The local container smoke also fixes
+the Development contact permit limit at five so the sixth request deterministically returns 429.
+
+### Verification
+
+- The regression test failed before the fix and passed after it.
+- `scripts/Test-Container.ps1 -Image portfolio-api:sprint-10` passed liveness,
+  readiness-degradation, ProblemDetails, public routing, auth routing, and contact throttling checks.
+
+### Relevant files
+
+- `scripts/Test-Container.ps1`
+- `scripts/Test-Deployment.ps1`
+- `tests/Portfolio.IntegrationTests/Deployment/DeploymentAssetTests.cs`
+
+### Related lessons
+
+- BUG-2026-003

@@ -1,8 +1,8 @@
+using Microsoft.Extensions.Logging.Abstractions;
 using Portfolio.Application.Authentication;
 using Portfolio.Application.Common.Authentication;
 using Portfolio.Application.Common.Exceptions;
 using Portfolio.Application.Common.Models;
-using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
 
 namespace Portfolio.UnitTests.Authentication;
