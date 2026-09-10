@@ -96,9 +96,7 @@ public sealed class SupabaseFileStorage(
         var relative = payload.SignedUrl.StartsWith("/object/", StringComparison.Ordinal)
             ? $"/storage/v1{payload.SignedUrl}"
             : payload.SignedUrl;
-        var signedUrl = Uri.TryCreate(relative, UriKind.Absolute, out var absolute)
-            ? absolute
-            : new Uri(_options.Url!, relative);
+        var signedUrl = new Uri(_options.Url!, relative);
         if (!string.Equals(signedUrl.Scheme, _options.Url!.Scheme, StringComparison.OrdinalIgnoreCase) ||
             !string.Equals(signedUrl.Host, _options.Url.Host, StringComparison.OrdinalIgnoreCase) ||
             signedUrl.Port != _options.Url.Port ||

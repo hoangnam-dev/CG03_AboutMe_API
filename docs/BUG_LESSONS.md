@@ -33,6 +33,7 @@ Its purpose is regression prevention, not incident narration.
 | BUG-2026-012 | Resolved | Docker | Shared | Docker publish omitted repository analyzer configuration | `docker`, `dotnet-publish`, `editorconfig`, `analyzers`, `generated-code` |
 | BUG-2026-013 | Resolved | Testing | Shared | Container smoke requests omitted the allowed frontend Origin | `docker`, `smoke-test`, `origin-validation`, `cors`, `rate-limit` |
 | BUG-2026-014 | Resolved | Docker / PostgreSQL | Shared | Supabase direct endpoint was unreachable from an IPv4-only Docker bridge | `docker`, `postgresql`, `supabase`, `ipv4`, `ipv6`, `session-pooler` |
+| BUG-2026-015 | Resolved | Storage / CI/CD | Shared | Root-relative signed URLs were parsed as file URIs on Linux | `uri`, `linux`, `supabase`, `signed-url` |
 
 ---
 
@@ -834,3 +835,65 @@ health checks rather than a deterministic repository test.
 ### Related lessons
 
 - BUG-2026-001
+
+## BUG-2026-015 — Root-relative signed URLs were parsed as file URIs on Linux
+
+- **Status:** Resolved
+- **Area:** Storage | CI/CD
+- **Feature:** Shared
+- **First observed:** 2026-09-10
+- **Last updated:** 2026-09-10
+- **Tags:** `uri`, `linux`, `supabase`, `signed-url`
+
+### Symptom
+
+The signed URL contract test passed on Windows but threw ServiceUnavailableException
+on the Ubuntu CI runner. The supplied CI run passed 369 of 370 tests.
+
+### Root cause
+
+Uri.TryCreate with UriKind.Absolute interprets a leading-slash path as a file URI
+on Unix. The adapter then rejects its scheme against the configured HTTPS origin.
+
+### Why it happened
+
+Absolute filesystem paths and root-relative HTTP references were assumed to have
+identical URI parsing behavior across operating systems.
+
+### Correct fix
+
+Resolve the provider reference using new Uri(configuredBase, reference), after the
+existing /object/ prefix normalization. Preserve scheme, host, port and signed-path
+validation on the resolved URI.
+
+### Prevention rule
+
+Resolve HTTP references against their trusted base before origin validation.
+Run URI adapter regression tests on the target operating system.
+
+### Regression test
+
+SupabaseFileStorageContractTests.SignedUrlRequestUsesLifetimeAndResolvesRelativeUrl
+covers short/root-relative, relative and absolute provider URLs. The rejection
+theory covers foreign hosts, network-path references, wrong scheme/port, file URIs
+and public-object paths.
+
+### Verification
+
+- Before fix: Windows Storage suite passed; Linux container reproduced the original
+  failure and both root-relative theory cases failed (2 of 21).
+- After fix: Linux Storage suite passed 21/21 using the same compiled test assembly
+  in portfolio-api:local with a read-only repository mount and no network.
+- dotnet restore Portfolio.sln passed.
+- dotnet build Portfolio.sln --configuration Release --no-restore passed with no warnings/errors.
+- dotnet test Portfolio.sln --configuration Release --no-build passed 378/378 on
+  Windows with Docker PostgreSQL and DOCKER_API_VERSION=1.43.
+
+### Relevant files
+
+- src/Portfolio.Infrastructure/Storage/SupabaseFileStorage.cs
+- tests/Portfolio.IntegrationTests/Storage/SupabaseFileStorageContractTests.cs
+
+### Related lessons
+
+None.
