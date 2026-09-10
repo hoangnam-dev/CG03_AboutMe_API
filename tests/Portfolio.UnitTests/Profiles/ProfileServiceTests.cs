@@ -1,9 +1,9 @@
+using System.Text.Json;
 using Microsoft.Extensions.Logging.Abstractions;
 using Portfolio.Application.Common.Exceptions;
-using Portfolio.Application.Common.Storage;
 using Portfolio.Application.Common.Models;
+using Portfolio.Application.Common.Storage;
 using Portfolio.Application.Profiles;
-using System.Text.Json;
 using Xunit;
 
 namespace Portfolio.UnitTests.Profiles;
@@ -71,7 +71,9 @@ public sealed class ProfileServiceTests
         {
             Profile = new Profile
             {
-                Id = Guid.NewGuid(), Slug = "nam", FullName = "Nam",
+                Id = Guid.NewGuid(),
+                Slug = "nam",
+                FullName = "Nam",
                 AvatarUrl = "profiles/old.png",
             },
             FailSave = true,

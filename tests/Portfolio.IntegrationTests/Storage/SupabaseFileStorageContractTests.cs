@@ -70,13 +70,17 @@ public sealed class SupabaseFileStorageContractTests
         Assert.Equal(HttpMethod.Delete, handler.Request!.Method);
     }
 
-    [Fact]
-    public async Task SignedUrlRequestUsesLifetimeAndResolvesRelativeUrl()
+    [Theory]
+    [InlineData("/object/sign/cv-files/cv.pdf?token=safe")]
+    [InlineData("/storage/v1/object/sign/cv-files/cv.pdf?token=safe")]
+    [InlineData("storage/v1/object/sign/cv-files/cv.pdf?token=safe")]
+    [InlineData("https://project.supabase.co/storage/v1/object/sign/cv-files/cv.pdf?token=safe")]
+    public async Task SignedUrlRequestUsesLifetimeAndResolvesRelativeUrl(string providerUrl)
     {
         var handler = new RecordingHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
         {
             Content = new StringContent(
-                "{\"signedURL\":\"/object/sign/cv-files/cv.pdf?token=safe\"}",
+                System.Text.Json.JsonSerializer.Serialize(new { signedURL = providerUrl }),
                 Encoding.UTF8,
                 "application/json"),
         });
@@ -173,13 +177,19 @@ public sealed class SupabaseFileStorageContractTests
             TestContext.Current.CancellationToken));
     }
 
-    [Fact]
-    public async Task SignedUrlFromUnexpectedOriginIsRejected()
+    [Theory]
+    [InlineData("https://attacker.example/storage/v1/object/sign/cv-files/cv.pdf?token=value")]
+    [InlineData("//attacker.example/storage/v1/object/sign/cv-files/cv.pdf?token=value")]
+    [InlineData("http://project.supabase.co/storage/v1/object/sign/cv-files/cv.pdf?token=value")]
+    [InlineData("https://project.supabase.co:444/storage/v1/object/sign/cv-files/cv.pdf?token=value")]
+    [InlineData("file:///storage/v1/object/sign/cv-files/cv.pdf")]
+    [InlineData("/storage/v1/object/public/cv-files/cv.pdf")]
+    public async Task SignedUrlFromUnexpectedOriginOrPathIsRejected(string providerUrl)
     {
         var handler = new RecordingHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
         {
             Content = new StringContent(
-                "{\"signedURL\":\"https://attacker.example/stolen?token=value\"}",
+                System.Text.Json.JsonSerializer.Serialize(new { signedURL = providerUrl }),
                 Encoding.UTF8,
                 "application/json"),
         });

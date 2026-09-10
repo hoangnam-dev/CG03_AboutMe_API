@@ -92,4 +92,48 @@ public sealed class MigrationTests(PostgreSqlFixture database)
                 cancellationToken: TestContext.Current.CancellationToken);
         }
     }
+
+    [Fact]
+    public async Task RepresentativeRowsSurviveUpgradeFromInitialMigration()
+    {
+        await database.ResetApplicationDataAsync(TestContext.Current.CancellationToken);
+        await using var context = database.CreateDbContext();
+        var migrator = context.GetService<IMigrator>();
+        await migrator.MigrateAsync(InitialMigration, TestContext.Current.CancellationToken);
+
+        try
+        {
+            await context.Database.ExecuteSqlRawAsync(
+                """
+                INSERT INTO profiles (slug, full_name, email)
+                VALUES ('migration-rehearsal', 'Migration Rehearsal', 'owner@example.test');
+                INSERT INTO certificates (issuer, issued_date, is_published)
+                VALUES ('Representative Issuer', DATE '2025-01-02', TRUE);
+                """,
+                TestContext.Current.CancellationToken);
+
+            await migrator.MigrateAsync(cancellationToken: TestContext.Current.CancellationToken);
+
+            await using var command = context.Database.GetDbConnection().CreateCommand();
+            command.CommandText =
+                """
+                SELECT p.show_email, p.show_phone, c.show_credential_id, c.is_published
+                FROM profiles p CROSS JOIN certificates c
+                WHERE p.slug = 'migration-rehearsal'
+                  AND c.issuer = 'Representative Issuer';
+                """;
+            await context.Database.OpenConnectionAsync(TestContext.Current.CancellationToken);
+            await using var reader = await command.ExecuteReaderAsync(TestContext.Current.CancellationToken);
+
+            Assert.True(await reader.ReadAsync(TestContext.Current.CancellationToken));
+            Assert.False(reader.GetBoolean(0));
+            Assert.False(reader.GetBoolean(1));
+            Assert.False(reader.GetBoolean(2));
+            Assert.True(reader.GetBoolean(3));
+        }
+        finally
+        {
+            await migrator.MigrateAsync(cancellationToken: TestContext.Current.CancellationToken);
+        }
+    }
 }
