@@ -4,7 +4,7 @@
 
 ## 1. Phạm vi
 
-Tài liệu này mô tả hành vi runtime và các cổng an toàn đã được triển khai đến hết Sprint 9; các kiểm thử PostgreSQL cần Docker đang chạy:
+Tài liệu này mô tả hành vi runtime đến Sprint 9 và luồng Docker/CI/vận hành đã có trong Sprint 10. Việc có artifact và test local không đồng nghĩa đã triển khai production; các kiểm thử PostgreSQL cần Docker đang chạy:
 
 - thiết lập local, migration và bootstrap tài khoản Administrator;
 - đăng nhập Administrator và phát hành JWT;
@@ -25,7 +25,11 @@ Tài liệu này mô tả hành vi runtime và các cổng an toàn đã đượ
 - fail-fast khi cấu hình ngoài Development không đạt yêu cầu an toàn;
 - kiểm soát hồi quy quyền Admin, exact-locale và public disclosure trên toàn bộ feature;
 - tách quyền PostgreSQL runtime/migration khỏi Supabase Data API roles và chốt ma trận quyền Storage;
-- ghi audit tối thiểu cho thay đổi publication/current của Resume.
+- ghi audit tối thiểu cho thay đổi publication/current của Resume;
+- build image .NET 10 chạy non-root, kiểm tra CI và smoke container;
+- chuẩn bị migration riêng, rollout theo image đã kiểm tra và quyết định rollback theo tương thích database.
+
+Member mới bắt đầu với Docker nên đọc [Hướng dẫn setup và triển khai Docker](../operations/DOCKER_SETUP_DEPLOYMENT_GUIDE.md), có lệnh PowerShell, kết quả mong đợi và cách xử lý lỗi.
 
 Nguồn đối chiếu:
 
@@ -1589,7 +1593,112 @@ Storage giữ ba bucket ảnh ở chế độ public-read/server-write; `certifi
 
 Các thay đổi SQL/Storage là production gate, không được coi là đã áp dụng chỉ vì automated test pass. Release operator phải chạy smoke test và lưu bằng chứng theo `docs/security/SPRINT_9_SECURITY_CHECKLIST.md` trước khi phát hành.
 
-## 30. Cổng hoàn thành sprint và quy tắc đồng bộ tài liệu
+## 30. Docker, CI và vận hành phát hành — Sprint 10
+
+Nguồn đối chiếu: `Dockerfile`, `.dockerignore`, `.github/workflows/backend-ci.yml`, `scripts/Test-Container.ps1`, `scripts/Test-Deployment.ps1`, `Program.cs` và `MigrationTests`. Sprint này không thêm endpoint hoặc schema. Các bước push registry, provisioning và rollout bên dưới là thao tác của release operator, chưa được workflow tự động thực hiện.
+
+### 30.1. Từ source tới container
+
+```mermaid
+flowchart LR
+    Source[Source và cấu hình build] --> Context[Docker context sau dockerignore]
+    Context --> SDK[SDK .NET 10]
+    SDK --> Restore[Restore API và project references]
+    Restore --> Publish[Publish Release vào app publish]
+    Publish --> Runtime[ASP.NET runtime .NET 10]
+    Runtime --> Process[Portfolio.Api.dll với UID 1654]
+    Secrets[Environment và PFX mount read-only] --> Process
+    Process --> Port[HTTP port 8080]
+    Process --> DB[(PostgreSQL ngoài container)]
+    Process --> Storage[(Supabase Storage ngoài container)]
+```
+
+Build stage phải nhận `.editorconfig`, `global.json` và `Directory.*.props` để giữ cùng quy tắc analyzer/SDK/package với host. Chỉ output publish được copy vào runtime. `.env`, `.secrets`, build output và Git metadata bị loại khỏi context; Dockerfile không dùng build arguments chứa credential. PFX và secret chỉ được cấp lúc chạy. `EXPOSE 8080` khai báo port, còn `docker run --publish` mới mở cổng trên host.
+
+### 30.2. CI thực tế và giới hạn kiểm tra local
+
+```mermaid
+flowchart TD
+    Event[PR hoặc push main hoặc workflow dispatch] --> Checkout[Checkout và setup .NET]
+    Checkout --> Restore[Restore solution]
+    Restore --> Build[Release build]
+    Build --> Tests[Unit và PostgreSQL integration tests]
+    Tests --> Format[Verify format toàn solution]
+    Format --> Image[Docker build với tag commit SHA]
+    Image --> Smoke[Test-Container.ps1]
+    Smoke --> Result[CI kết thúc sau kiểm tra]
+    Result -. thao tác riêng .-> Operator[Operator push image và triển khai]
+```
+
+Workflow có quyền `contents: read`, timeout 30 phút và hủy run cũ cùng ref. Image tên `portfolio-api:<github.sha>` chỉ nằm trong Docker engine của runner; workflow chưa push GHCR, chưa xuất image artifact, chưa quét vulnerability và chưa chạy migration/deploy. Muốn triển khai phải giữ và chuyển đúng artifact đã kiểm tra, hoặc build rồi kiểm tra lại artifact sẽ push.
+
+`Test-Container.ps1` tạo container tên ngẫu nhiên, bind `127.0.0.1:18080` tới `8080`, đặt Development, frontend origin `http://smoke.local` và Contact permit limit 5. Script kiểm tra bảng dưới rồi xóa container ở `finally`.
+
+| Kiểm tra | Local smoke mong đợi | Ý nghĩa |
+| --- | --- | --- |
+| `/health` | 200 | Process phục vụ HTTP |
+| `/health/ready` | 503 | PostgreSQL/Storage chưa cấu hình trong smoke |
+| Login với `{}` và Origin hợp lệ | 400 ProblemDetails | Origin guard và DTO validation hoạt động |
+| Public profile `smoke` | 200, 404 hoặc 503 | Kiểm tra route, chưa chứng minh dữ liệu public tồn tại |
+| 6 Contact requests | Request cuối 429 | Throttle với permit limit được đặt là 5 |
+
+Origin guard hiện áp dụng cho POST/DELETE dưới `/api/v1/auth`, không áp dụng cho Contact. Contact vẫn có rate limiting độc lập. Script gửi cùng Origin cho mọi request để mô phỏng client nhất quán. Local smoke không login bằng credential thật và không upload Storage.
+
+### 30.3. Startup và health gate ngoài Development
+
+```mermaid
+flowchart TD
+    Start[Start container với runtime config] --> Options{Options hợp lệ?}
+    Options -->|Không| Stop[Dừng startup và sửa cấu hình]
+    Options -->|Có| Listen[API lắng nghe 8080]
+    Listen --> Live[Liveness 200]
+    Listen --> Ready{DB và Storage healthy?}
+    Ready -->|Không| Hold[Readiness 503 và giữ rollout]
+    Ready -->|Có| Verify[Readiness 200 và critical smoke]
+    Verify --> Traffic[Chấp nhận release khi đủ bằng chứng]
+```
+
+Ngoài Development: yêu cầu đúng một frontend origin HTTPS, JWT/refresh/Storage/DB hợp lệ và `BootstrapAdmin.Enabled=false`. Không có `Database.Migrate` trong startup. Database phải được chuẩn bị trước và Admin phải được provision theo quy trình kiểm soát. Swagger chỉ bật trong Development.
+
+`Program.cs` hiện chưa cấu hình trusted forwarded headers. Khi dùng reverse proxy, phải xác nhận HTTPS scheme, redirect và client IP thực tế trước khi mở public traffic. Không mặc định coi `X-Forwarded-For`/`X-Forwarded-Proto` đã được ứng dụng tin cậy; rate limiter hiện lấy `RemoteIpAddress` nên có thể gom nhiều client sau proxy vào một bucket.
+
+### 30.4. Migration, rollout và rollback
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Operator as Release operator
+    participant Runner as Migration runner
+    participant DB as PostgreSQL
+    participant Platform as Hosting platform
+    participant API as New container
+
+    Operator->>Operator: Ghi image digest và previous image
+    Operator->>DB: Xác nhận backup và migration history
+    Operator->>Runner: Cấp migration credential cho một runner
+    Runner->>DB: Áp dụng migration đã review nếu có
+    alt Migration thất bại
+        Runner-->>Operator: Dừng rollout và đánh giá recovery
+    else Schema sẵn sàng
+        Operator->>Platform: Deploy image đã kiểm tra và runtime secrets
+        Platform->>API: Start non-root trên 8080
+        Operator->>API: Kiểm tra health và critical flows
+        alt Readiness hoặc critical flow lỗi
+            Operator->>Operator: Đánh giá tương thích schema với image cũ
+            Operator->>Platform: Rollback image nếu tương thích
+        else Kiểm tra đạt
+            Operator->>Operator: Lưu bằng chứng và chấp nhận release
+        end
+    end
+```
+
+Rehearsal dùng PostgreSQL thật: apply toàn bộ migration vào DB sạch, upgrade Profile/Certificate có dữ liệu từ `InitialCreate`, và từ chối certificate thiếu `issued_date`. Đây là dữ liệu test đại diện, không phải bản sao production. Migration list dùng design-time factory và biến môi trường `ConnectionStrings__PostgreSql`; nếu không có biến này, factory dùng database local mặc định, không tự lấy User Secrets.
+
+`Test-Deployment.ps1` yêu cầu `BaseUri`, `FrontendOrigin` và profile slug đúng. Health/readiness/public profile phải 200; login `{}` phải 400. Login thật cần cả email/password. Throttle và upload là opt-in. Upload hiện thay avatar của Profile, có thể xóa object avatar cũ sau khi lưu metadata; script không tự khôi phục. Dùng staging và fixture đã phê duyệt.
+
+Rollback application không tự rollback database. Giữ image cũ và chỉ chuyển lại khi schema/data còn tương thích; thay đổi phá hủy cần forward repair hoặc phục hồi backup đã xác nhận. Chi tiết thao tác tại [hướng dẫn Docker](../operations/DOCKER_SETUP_DEPLOYMENT_GUIDE.md) và [rollback runbook](../operations/ROLLBACK.md).
+
+## 31. Cổng hoàn thành sprint và quy tắc đồng bộ tài liệu
 
 Một sprint backend chỉ được xem là **hoàn thành** khi đồng thời đáp ứng tất cả điều kiện sau:
 

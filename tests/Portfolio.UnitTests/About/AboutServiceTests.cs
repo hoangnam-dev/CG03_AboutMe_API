@@ -26,7 +26,8 @@ public sealed class AboutServiceTests
         var request = new AboutUpdateRequest(-1, 1, 1, true, true, true, true, false,
             new Dictionary<string, AboutTranslationRequest>
             {
-                ["en"] = new("About", null), ["vi"] = new("Gioi thieu", null),
+                ["en"] = new("About", null),
+                ["vi"] = new("Gioi thieu", null),
             });
 
         var error = await Assert.ThrowsAsync<ValidationException>(() => service.UpdateAsync(

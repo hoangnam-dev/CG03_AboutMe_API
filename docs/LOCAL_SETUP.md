@@ -380,3 +380,25 @@ dotnet tool restore
 - Không dùng Storage service credential trong frontend.
 - Rotate ngay credential nếu bị lộ.
 - Production secrets phải nằm trong secret store/dashboard của nền tảng deploy, không dùng file `.env` được đóng gói vào image.
+
+## 12. Docker local
+
+Hướng dẫn từng bước, sơ đồ kiến trúc, cấu hình Supabase/PFX, migration, push image và rollout nằm tại [Hướng dẫn setup và triển khai Docker](operations/DOCKER_SETUP_DEPLOYMENT_GUIDE.md).
+
+Build and smoke-test the image from the repository root:
+
+```powershell
+docker build --tag portfolio-api:local .
+./scripts/Test-Container.ps1 -Image portfolio-api:local
+```
+
+The image runs as the .NET runtime image's non-root user and exposes port `8080`.
+The local smoke test intentionally starts in Development with dependency fallbacks:
+it verifies the artifact, liveness, safe ProblemDetails, public/auth routing, and
+rate limiting, while readiness is expected to return HTTP 503 without configured
+PostgreSQL and Storage dependencies.
+
+Production must use the platform environment/secret store described in
+[Environment Reference](operations/ENVIRONMENT.md), run migrations from one
+controlled runner using the [Migration Runbook](operations/MIGRATIONS.md), and
+require `/health/ready` to return HTTP 200 before receiving traffic.
