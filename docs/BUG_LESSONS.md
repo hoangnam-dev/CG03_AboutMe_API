@@ -32,6 +32,7 @@ Its purpose is regression prevention, not incident narration.
 | BUG-2026-011 | Resolved | PostgreSQL | Shared | Direct role revokes left inherited PUBLIC access | `postgresql`, `grants`, `public-role`, `supabase`, `data-api` |
 | BUG-2026-012 | Resolved | Docker | Shared | Docker publish omitted repository analyzer configuration | `docker`, `dotnet-publish`, `editorconfig`, `analyzers`, `generated-code` |
 | BUG-2026-013 | Resolved | Testing | Shared | Container smoke requests omitted the allowed frontend Origin | `docker`, `smoke-test`, `origin-validation`, `cors`, `rate-limit` |
+| BUG-2026-014 | Resolved | Docker / PostgreSQL | Shared | Supabase direct endpoint was unreachable from an IPv4-only Docker bridge | `docker`, `postgresql`, `supabase`, `ipv4`, `ipv6`, `session-pooler` |
 
 ---
 
@@ -765,3 +766,71 @@ the Development contact permit limit at five so the sixth request deterministica
 ### Related lessons
 
 - BUG-2026-003
+
+---
+
+## BUG-2026-014 — Supabase direct endpoint was unreachable from an IPv4-only Docker bridge
+
+- **Status:** Resolved
+- **Area:** Docker / PostgreSQL
+- **Feature:** Shared
+- **First observed:** 2026-09-10
+- **Last updated:** 2026-09-10
+- **Tags:** `docker`, `postgresql`, `supabase`, `ipv4`, `ipv6`, `session-pooler`
+
+### Symptom
+
+The container stayed live and the Supabase Storage health check passed, but
+PostgreSQL health and readiness returned 503. Public Profile queries returned
+500 even though the expected row existed in the Supabase SQL editor.
+
+### Root cause
+
+The runtime connection string used the Supabase direct endpoint
+`db.<project-ref>.supabase.co:5432`. DNS resolved it only to IPv6 while the
+Docker bridge had IPv6 disabled, so Npgsql failed with `Network is unreachable`.
+
+### Why it happened
+
+Successful Supabase Storage access was treated as evidence that all Supabase
+dependencies were reachable. Storage uses HTTPS independently from the native
+PostgreSQL endpoint, and the Docker network capability was not checked before
+selecting the database connection mode.
+
+### Correct fix
+
+For this IPv4-only Docker environment, replace the direct database endpoint
+with the exact Supabase Shared Pooler connection in Session mode on port 5432,
+including its pooler hostname and `postgres.<project-ref>` username. Recreate
+the container so Docker reloads the env file.
+
+### Prevention rule
+
+For Docker or hosting networks without verified IPv6 connectivity, use the
+Supabase Session pooler on port 5432 for persistent EF Core runtime traffic;
+use a direct endpoint only when IPv6 or the Supabase IPv4 add-on is confirmed.
+
+### Regression test
+
+Not added. The failure depends on the developer's Docker network and the DNS
+records of an external Supabase project; it is covered by documented runtime
+health checks rather than a deterministic repository test.
+
+### Verification
+
+- Container log showed Npgsql attempting the direct endpoint's IPv6 address
+  and failing with `SocketException (101): Network is unreachable`.
+- DNS returned an AAAA record and no A record for the configured direct host;
+  `docker network inspect bridge` reported `EnableIPv6=false`.
+- After switching to Session pooler and recreating the container,
+  `/health/supabase` returned 200 with both PostgreSQL and Storage healthy,
+  `/health/ready` returned 200, and the public Profile request returned 200.
+
+### Relevant files
+
+- `docs/operations/DOCKER_SETUP_DEPLOYMENT_GUIDE.md`
+- `docs/LOCAL_SETUP.md`
+
+### Related lessons
+
+- BUG-2026-001

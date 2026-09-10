@@ -130,7 +130,52 @@ Các lệnh này chỉ dừng/xóa container demo vừa tạo, không xóa image
 
 ### 5.1. Chuẩn bị dịch vụ
 
-Dùng Supabase project development/staging do team cấp. Theo [local setup](../LOCAL_SETUP.md), lấy connection PostgreSQL trực tiếp hoặc session pooler; migration không dùng transaction pooler. Tạo đủ năm bucket:
+Dùng Supabase project development/staging do team cấp. Theo [local setup](../LOCAL_SETUP.md), chọn kết nối PostgreSQL theo khả năng mạng của môi trường chạy API:
+
+| Môi trường runtime | Kết nối nên dùng | Host/port |
+| --- | --- | --- |
+| Docker Desktop hoặc host chỉ có IPv4 | **Shared Pooler — Session mode** | Host do Supabase Connect cung cấp, port `5432` |
+| Host đã xác nhận có IPv6 hoặc có Supabase IPv4 add-on | Direct connection | `db.<project-ref>.supabase.co:5432` |
+
+#### Cách lấy Shared Pooler — Session mode
+
+Trong Supabase Dashboard:
+
+1. Mở đúng project development/staging và nhấn **Connect** ở thanh trên cùng.
+2. Chọn tab **Direct** (Connection string). Tên tab mô tả nhóm cấu hình kết nối; bước tiếp theo vẫn cho phép chọn pooler.
+3. Trong **Connection Method**, chọn **Session pooler**.
+4. Có thể giữ **Type = URI**, nhưng với ứng dụng này hãy lấy các giá trị riêng trong khối **Connection parameters** thay vì dán nguyên URI vào Npgsql.
+5. Copy chính xác bốn giá trị:
+
+   | Supabase hiển thị | Giá trị điền vào Npgsql | Dạng thường gặp |
+   | --- | --- | --- |
+   | `host` | `Host` | `aws-0-<region>.pooler.supabase.com` |
+   | `port` | `Port` | `5432` |
+   | `database` | `Database` | `postgres` |
+   | `user` | `Username` | `postgres.<project-ref>` |
+
+6. Dùng **database password** của project cho `Password`. Đây không phải anon key, publishable key hay `service_role` key. Nếu dialog hiện `[YOUR-PASSWORD]`, phải thay placeholder bằng password thật. Chỉ dùng **Reset database password** khi thật sự cần vì thao tác đó làm credential cũ của các client khác mất hiệu lực.
+7. Ghép thành một dòng trong `.env.docker` bằng cú pháp Npgsql:
+
+```dotenv
+ConnectionStrings__PostgreSql=Host=aws-0-<region>.pooler.supabase.com;Port=5432;Database=postgres;Username=postgres.<project-ref>;Password="<database-password>";SSL Mode=Require
+```
+
+Không commit `.env.docker`, không chụp/gửi dòng đã điền password và không dùng nguyên URI `postgresql://...` thay cho chuỗi key-value ở trên. Sau khi đổi file, phải recreate container theo mục 7; `docker restart` không nạp lại `--env-file`.
+
+Docker Desktop có thể chạy container trên bridge IPv4-only. [Supabase xác định direct connection dùng IPv6 nếu project không có IPv4 add-on](https://supabase.com/docs/guides/database/connecting-to-postgres); khi đó Npgsql báo `Network is unreachable` dù Storage vẫn healthy. Với Docker local, ưu tiên **Session pooler port `5432`** và copy chính xác cả hostname lẫn username dạng `postgres.<project-ref>` từ nút **Connect** của Supabase. Không dùng Transaction pooler port `6543` cho EF Core migration.
+
+Có thể kiểm tra mà không làm lộ credential:
+
+```powershell
+docker network inspect bridge --format "DockerBridgeIPv6={{.EnableIPv6}}"
+Resolve-DnsName db.<project-ref>.supabase.co -Type A -ErrorAction SilentlyContinue
+Resolve-DnsName db.<project-ref>.supabase.co -Type AAAA -ErrorAction SilentlyContinue
+```
+
+Nếu bridge trả `false`, direct host chỉ có bản ghi `AAAA` và không có `A`, hãy dùng Session pooler. Storage health 200 không chứng minh PostgreSQL reachable vì hai dependency dùng endpoint và giao thức khác nhau.
+
+Sau đó tạo đủ năm bucket:
 
 | Bucket | Visibility | Dùng cho |
 | --- | --- | --- |
@@ -385,6 +430,7 @@ Nếu readiness/critical flow thất bại, giữ rollout. Rollback image chỉ 
 | Production origins error | Các key `Frontend__Origins__N` | Giữ đúng một HTTPS origin, xóa key thừa |
 | Không đọc được PFX | Source mount, target path, quyền đọc, password | Mount đúng file, giữ read-only và cấp quyền UID |
 | DB localhost lỗi trong container | Host trong connection string | Supabase hostname hoặc `host.docker.internal` cho DB trên Windows |
+| PostgreSQL `Network is unreachable`, Storage vẫn healthy | Log Npgsql, DNS `A`/`AAAA`, `docker network inspect bridge` | Đổi Supabase direct endpoint sang Shared Pooler Session mode port `5432`, dùng đúng pooler username rồi recreate container |
 | `/health` 200, readiness 503 | `/health/supabase` và log | Kiểm tra PostgreSQL, URL/key/bucket Storage |
 | Login 403 với Postman/script | Header `Origin` | Gửi exact origin đã allowlist cho `/api/v1/auth` |
 | Login 401 | Account/role/password/session policy | Xác nhận Identity account, không bootstrap Production |
