@@ -16,6 +16,7 @@ public sealed class ProductionStartupTests
     [InlineData("RateLimit:Auth:LoginPermitLimit", "0", "Auth rate limits")]
     [InlineData("RateLimit:Contact:PermitLimit", "0", "Contact rate limit")]
     [InlineData("BootstrapAdmin:Enabled", "true", "disabled")]
+    [InlineData("ReverseProxy:KnownProxies:0", "not-an-ip", "literal IP")]
     public void ProductionStartupRejectsUnsafeConfiguration(
         string key,
         string value,
@@ -26,6 +27,16 @@ public sealed class ProductionStartupTests
         var exception = Assert.ThrowsAny<Exception>(() => factory.CreateClient());
 
         Assert.Contains(expectedMessage, exception.ToString(), StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void ProductionStartupRequiresAtLeastOneTrustedProxy()
+    {
+        using var factory = new ProductionApiFactory("ReverseProxy:KnownProxies:0", "");
+
+        var exception = Assert.ThrowsAny<Exception>(() => factory.CreateClient());
+
+        Assert.Contains("at least one trusted proxy", exception.ToString(), StringComparison.OrdinalIgnoreCase);
     }
 
     private sealed class ProductionApiFactory(string overrideKey, string overrideValue)
@@ -49,6 +60,7 @@ public sealed class ProductionStartupTests
             builder.UseSetting("SupabaseStorage:Url", "https://storage.example");
             builder.UseSetting("SupabaseStorage:ServiceRoleKey", "test-service-role-key");
             builder.UseSetting("BootstrapAdmin:Enabled", "false");
+            builder.UseSetting("ReverseProxy:KnownProxies:0", "172.30.0.1");
             builder.UseSetting(overrideKey, overrideValue);
         }
 
