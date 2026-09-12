@@ -73,20 +73,22 @@ GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO portfolio_migrator;
 GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO portfolio_migrator;
 GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA public TO portfolio_migrator;
 
--- PostgreSQL permits changing another role's default privileges only when the
--- executing identity is a member of that role. ADMIN OPTION is retained by the
--- database owner so it can provision the separately held migration login.
-GRANT portfolio_migrator TO CURRENT_USER WITH ADMIN OPTION;
+-- PostgreSQL 16+ automatically gives a non-superuser role creator ADMIN on the
+-- role it creates, but with SET and INHERIT disabled. Enable SET without trying
+-- to grant ADMIN back to the grantor so the owner can manage these defaults.
+GRANT portfolio_migrator TO CURRENT_USER WITH SET TRUE, INHERIT FALSE;
 
 -- These defaults apply to objects subsequently created by portfolio_migrator.
-ALTER DEFAULT PRIVILEGES FOR ROLE portfolio_migrator IN SCHEMA public
+SET LOCAL ROLE portfolio_migrator;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public
     GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO portfolio_api;
-ALTER DEFAULT PRIVILEGES FOR ROLE portfolio_migrator IN SCHEMA public
+ALTER DEFAULT PRIVILEGES IN SCHEMA public
     REVOKE ALL ON TABLES FROM PUBLIC, anon, authenticated;
-ALTER DEFAULT PRIVILEGES FOR ROLE portfolio_migrator IN SCHEMA public
+ALTER DEFAULT PRIVILEGES IN SCHEMA public
     REVOKE ALL ON SEQUENCES FROM PUBLIC, anon, authenticated;
-ALTER DEFAULT PRIVILEGES FOR ROLE portfolio_migrator IN SCHEMA public
+ALTER DEFAULT PRIVILEGES IN SCHEMA public
     REVOKE EXECUTE ON FUNCTIONS FROM PUBLIC, anon, authenticated;
+RESET ROLE;
 
 COMMIT;
 
