@@ -33,6 +33,32 @@ public sealed class DeploymentAssetTests
         Assert.Contains("Test-Container.ps1", workflow, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void ContinuousDeliveryPublishesVerifiedShaImageOnlyFromMain()
+    {
+        var workflow = Read(".github/workflows/backend-ci.yml").ReplaceLineEndings("\n");
+        var publishStart = workflow.IndexOf("\n  publish:\n", StringComparison.Ordinal);
+
+        Assert.True(publishStart >= 0, "The workflow must define a publish job.");
+        var publishJob = workflow[publishStart..];
+        Assert.Contains(
+            "if: github.event_name == 'push' && github.ref == 'refs/heads/main'",
+            publishJob,
+            StringComparison.Ordinal);
+        Assert.Contains("needs: verify", publishJob, StringComparison.Ordinal);
+        Assert.Contains("packages: write", publishJob, StringComparison.Ordinal);
+        Assert.Contains("actions/upload-artifact@v7", workflow, StringComparison.Ordinal);
+        Assert.Contains("docker save --output portfolio-api.tar", workflow, StringComparison.Ordinal);
+        Assert.Contains("actions/download-artifact@v8", publishJob, StringComparison.Ordinal);
+        Assert.Contains("docker load --input portfolio-api.tar", publishJob, StringComparison.Ordinal);
+        Assert.Contains("docker/login-action@v4", publishJob, StringComparison.Ordinal);
+        Assert.Contains(
+            "ghcr.io/hoangnam-dev/cg03-aboutme-api:${{ github.sha }}",
+            publishJob,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain("docker build", publishJob, StringComparison.Ordinal);
+    }
+
     [Theory]
     [InlineData(".dockerignore")]
     [InlineData(".env.example")]

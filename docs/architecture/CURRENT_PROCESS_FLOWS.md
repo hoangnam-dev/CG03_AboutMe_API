@@ -1595,7 +1595,7 @@ Các thay đổi SQL/Storage là production gate, không được coi là đã �
 
 ## 30. Docker, CI và vận hành phát hành — Sprint 10
 
-Nguồn đối chiếu: `Dockerfile`, `.dockerignore`, `.github/workflows/backend-ci.yml`, `scripts/Test-Container.ps1`, `scripts/Test-Deployment.ps1`, `Program.cs` và `MigrationTests`. Sprint này không thêm endpoint hoặc schema. Các bước push registry, provisioning và rollout bên dưới là thao tác của release operator, chưa được workflow tự động thực hiện.
+Nguồn đối chiếu: `Dockerfile`, `.dockerignore`, `.github/workflows/backend-ci.yml`, `scripts/Test-Container.ps1`, `scripts/Test-Deployment.ps1`, `Program.cs` và `MigrationTests`. Sprint này không thêm endpoint hoặc schema. Workflow tự động publish image đã kiểm tra lên GHCR khi push `main`; provisioning, migration và rollout vẫn là thao tác của release operator.
 
 ### 30.1. Từ source tới container
 
@@ -1626,11 +1626,14 @@ flowchart TD
     Tests --> Format[Verify format toàn solution]
     Format --> Image[Docker build với tag commit SHA]
     Image --> Smoke[Test-Container.ps1]
-    Smoke --> Result[CI kết thúc sau kiểm tra]
-    Result -. thao tác riêng .-> Operator[Operator push image và triển khai]
+    Smoke --> Gate{Push main?}
+    Gate -->|Không| Result[CI kết thúc sau kiểm tra]
+    Gate -->|Có| Artifact[Export image đã kiểm tra]
+    Artifact --> Publish[Job publish đẩy SHA tag lên GHCR]
+    Publish -. thao tác riêng .-> Operator[Operator triển khai đúng SHA tag hoặc digest]
 ```
 
-Workflow có quyền `contents: read`, timeout 30 phút và hủy run cũ cùng ref. Image tên `portfolio-api:<github.sha>` chỉ nằm trong Docker engine của runner; workflow chưa push GHCR, chưa xuất image artifact, chưa quét vulnerability và chưa chạy migration/deploy. Muốn triển khai phải giữ và chuyển đúng artifact đã kiểm tra, hoặc build rồi kiểm tra lại artifact sẽ push.
+Workflow mặc định có quyền `contents: read`, timeout 30 phút và hủy run cũ cùng ref. Chỉ job `publish`, chỉ trên push `main` và sau `verify`, nhận thêm `packages: write`. Job này tải artifact một ngày do `verify` xuất, không rebuild, rồi push `ghcr.io/hoangnam-dev/cg03-aboutme-api:<github.sha>`. Workflow vẫn chưa quét vulnerability, chạy migration hoặc deploy; release operator phải dùng đúng SHA tag hoặc repository digest đã publish.
 
 `Test-Container.ps1` tạo container tên ngẫu nhiên, bind `127.0.0.1:18080` tới `8080`, đặt Development, frontend origin `http://smoke.local` và Contact permit limit 5. Script kiểm tra bảng dưới rồi xóa container ở `finally`.
 
