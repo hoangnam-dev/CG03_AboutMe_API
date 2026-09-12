@@ -308,6 +308,7 @@ docker rm portfolio-api-local
 | `ASPNETCORE_ENVIRONMENT` | `Production` |
 | `Frontend__Origins__0` | Đúng một origin HTTPS của frontend, không có path/trailing slash |
 | `Frontend__Origins__1`, `__2` | Xóa hẳn, không để key rỗng |
+| `ReverseProxy__KnownProxies__0` | IP literal của proxy trực tiếp; deployment Docker/Nginx hiện tại dùng gateway `172.30.0.1` |
 | `BootstrapAdmin__Enabled` | `false`; user Admin đã được provision |
 | PostgreSQL | Login runtime có DML theo policy, khác credential migration |
 | JWT | PFX production riêng, mount đọc được bởi non-root, issuer/audience/key ID khớp |
@@ -329,7 +330,15 @@ flowchart LR
     Proxy -. cần cấu hình trust rõ ràng .-> Forwarded[Forwarded scheme và client IP]
 ```
 
-`Program.cs` hiện có `UseHttpsRedirection`/HSTS nhưng chưa đăng ký `UseForwardedHeaders` với trusted proxies. Vì vậy không coi forwarded scheme/client IP là đã được xử lý. Trước public rollout, kiểm tra redirect loop, HTTPS scheme và việc nhiều client bị gom chung IP rate limit. Cấu hình trusted proxy phải theo topology hosting cụ thể; tài liệu này chưa triển khai thêm middleware hoặc cấu hình Nginx.
+`Program.cs` xử lý `X-Forwarded-For` và `X-Forwarded-Proto` trước HSTS/HTTPS redirect, logging và rate limiting, nhưng chỉ khi `ReverseProxy:KnownProxies` có ít nhất một IP literal. Production từ chối khởi động nếu danh sách này rỗng hoặc không hợp lệ; Development không cấu hình proxy thì middleware không chạy và header giả mạo tiếp tục bị bỏ qua.
+
+Deployment Docker/Nginx dùng network cố định `172.30.0.0/24` và cấu hình gateway trực tiếp:
+
+```dotenv
+ReverseProxy__KnownProxies__0=172.30.0.1
+```
+
+Middleware chỉ xử lý một proxy hop. Nếu subnet, network mode hoặc reverse-proxy topology thay đổi, phải xác nhận lại IP peer mà container thực sự quan sát trước khi đổi allowlist. Không mở port `8080` public và không cấu hình một CIDR rộng chỉ để làm header hoạt động.
 
 ## 9. CI, push image và rollout
 

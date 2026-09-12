@@ -34,6 +34,7 @@ Its purpose is regression prevention, not incident narration.
 | BUG-2026-013 | Resolved | Testing | Shared | Container smoke requests omitted the allowed frontend Origin | `docker`, `smoke-test`, `origin-validation`, `cors`, `rate-limit` |
 | BUG-2026-014 | Resolved | Docker / PostgreSQL | Shared | Supabase direct endpoint was unreachable from an IPv4-only Docker bridge | `docker`, `postgresql`, `supabase`, `ipv4`, `ipv6`, `session-pooler` |
 | BUG-2026-015 | Resolved | Storage / CI/CD | Shared | Root-relative signed URLs were parsed as file URIs on Linux | `uri`, `linux`, `supabase`, `signed-url` |
+| BUG-2026-016 | Resolved | API | Shared | Empty forwarded-header allowlist trusted every proxy | `aspnet-core`, `forwarded-headers`, `reverse-proxy`, `rate-limit`, `security` |
 
 ---
 
@@ -897,3 +898,69 @@ and public-object paths.
 ### Related lessons
 
 None.
+
+---
+
+## BUG-2026-016 — Empty forwarded-header allowlist trusted every proxy
+
+- **Status:** Resolved
+- **Area:** API
+- **Feature:** Shared
+- **First observed:** 2026-09-12
+- **Last updated:** 2026-09-12
+- **Tags:** `aspnet-core`, `forwarded-headers`, `reverse-proxy`, `rate-limit`, `security`
+
+### Symptom
+
+After Forwarded Headers Middleware was added, three direct test requests with
+different spoofed `X-Forwarded-For` values bypassed the connection-IP contact
+rate-limit partition instead of returning 429 on the third request.
+
+### Root cause
+
+Clearing both `KnownProxies` and `KnownIPNetworks` while still adding the
+middleware made an empty trust list accept forwarded headers from any peer.
+
+### Why it happened
+
+The initial implementation treated an empty allowlist as "trust nobody", but
+the middleware uses that state as unrestricted proxy trust.
+
+### Correct fix
+
+Register configured one-hop forwarded-header processing only when at least one
+literal trusted proxy IP exists. Require a non-empty, valid allowlist in
+Production; leave the middleware absent in Development when no proxy is
+configured.
+
+### Prevention rule
+
+Never add Forwarded Headers Middleware with both proxy trust collections empty.
+An empty application allowlist must keep the middleware out of the pipeline.
+
+### Regression test
+
+- `ForwardedHeadersApiTests.TrustedProxySuppliesClientIpAndHttpsScheme`
+- `ForwardedHeadersApiTests.UntrustedPeerCannotSupplyClientIpOrScheme`
+- `ContactsApiTests.SpoofedForwardedHeadersDoNotBypassConnectionRateLimit`
+- `ProductionStartupTests.ProductionStartupRequiresAtLeastOneTrustedProxy`
+
+### Verification
+
+- Focused integration suite: 13 passed, 0 failed.
+- `dotnet format Portfolio.sln --verify-no-changes --no-restore`: passed.
+- Release build: 0 warnings, 0 errors.
+- Full solution tests: 382 passed, 0 failed.
+- Container smoke: passed for `portfolio-api:forwarded-headers`.
+
+### Relevant files
+
+- `src/Portfolio.Api/Program.cs`
+- `src/Portfolio.Api/Configuration/ConfigureForwardedHeadersOptions.cs`
+- `src/Portfolio.Api/Configuration/ReverseProxyOptionsValidator.cs`
+- `tests/Portfolio.IntegrationTests/Api/ForwardedHeadersApiTests.cs`
+- `tests/Portfolio.IntegrationTests/Api/ContactsApiTests.cs`
+
+### Related lessons
+
+- BUG-2026-013
