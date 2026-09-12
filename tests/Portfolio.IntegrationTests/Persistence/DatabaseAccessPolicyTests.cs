@@ -29,6 +29,20 @@ public sealed class DatabaseAccessPolicyTests(PostgreSqlFixture database)
 
         var apply = await ReadSqlAsync("database-access.sql");
         var rollback = await ReadSqlAsync("database-access-rollback.sql");
+
+        var migrationMembershipGrant = apply.IndexOf(
+            "GRANT portfolio_migrator TO CURRENT_USER WITH ADMIN OPTION;",
+            StringComparison.OrdinalIgnoreCase);
+        var migrationDefaultPrivileges = apply.IndexOf(
+            "ALTER DEFAULT PRIVILEGES FOR ROLE portfolio_migrator",
+            StringComparison.OrdinalIgnoreCase);
+
+        Assert.True(
+            migrationMembershipGrant >= 0 &&
+            migrationMembershipGrant < migrationDefaultPrivileges,
+            "The bootstrap identity must become an administrator/member of " +
+            "portfolio_migrator before changing that role's default privileges.");
+
         try
         {
             await ExecuteAsync(connection, apply);
