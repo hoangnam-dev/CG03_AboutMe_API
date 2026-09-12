@@ -48,3 +48,48 @@ jobs:
       - name: Smoke-test container
         shell: pwsh
         run: ./scripts/Test-Container.ps1 -Image portfolio-api:${{ github.sha }}
+
+      - name: Export verified container image
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: docker save --output portfolio-api.tar portfolio-api:${{ github.sha }}
+
+      - name: Upload verified container image
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: actions/upload-artifact@v7
+        with:
+          name: portfolio-api-${{ github.sha }}
+          path: portfolio-api.tar
+          if-no-files-found: error
+          retention-days: 1
+
+  publish:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Download verified container image
+        uses: actions/download-artifact@v8
+        with:
+          name: portfolio-api-${{ github.sha }}
+
+      - name: Load verified container image
+        run: docker load --input portfolio-api.tar
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Publish immutable container image
+        run: |
+          docker tag portfolio-api:${{ github.sha }} ghcr.io/hoangnam-dev/cg03-aboutme-api:${{ github.sha }}
+          docker push ghcr.io/hoangnam-dev/cg03-aboutme-api:${{ github.sha }}
+
+      - name: Record published digest
+        run: docker image inspect ghcr.io/hoangnam-dev/cg03-aboutme-api:${{ github.sha }} --format '{{json .RepoDigests}}'

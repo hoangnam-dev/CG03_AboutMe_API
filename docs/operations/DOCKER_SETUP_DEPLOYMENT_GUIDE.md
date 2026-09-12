@@ -344,21 +344,24 @@ Middleware chỉ xử lý một proxy hop. Nếu subnet, network mode hoặc rev
 
 ### 9.1. Hiểu workflow hiện tại
 
-CI chạy khi PR, push `main` hoặc workflow dispatch: restore → Release build → tests PostgreSQL thật → format → build `portfolio-api:<SHA>` → local smoke. Workflow chỉ có quyền đọc source. **Chưa có push registry, scan vulnerability hay tự deploy**. Image trên runner sẽ không tự trở thành image trên hosting.
+CI chạy khi PR, push `main` hoặc workflow dispatch: restore → Release build → tests PostgreSQL thật → format → build `portfolio-api:<SHA>` → local smoke. PR và workflow dispatch dừng sau bước kiểm tra. Khi một commit được push vào `main`, job `verify` xuất đúng image vừa smoke-test thành artifact một ngày; job `publish` có quyền `packages: write` tải artifact đó, không rebuild, rồi push lên:
 
-Để release, dùng image đã build và kiểm tra ở cùng máy/runner sẽ push. Base image tag `10.0` có thể thay đổi theo bản vá: build lại cùng source có thể tạo digest khác. Tag SHA giúp truy vết source, digest xác định artifact thực tế. Nếu build lại, phải kiểm tra lại image đó.
+```text
+ghcr.io/hoangnam-dev/cg03-aboutme-api:<commit-sha>
+```
 
-### 9.2. Ví dụ push thủ công lên GHCR
+Workflow chưa scan vulnerability, chạy migration hoặc tự deploy. Base image tag `10.0` có thể thay đổi theo bản vá nên build lại cùng source vẫn có thể tạo digest khác. Rollout trên Droplet phải dùng tag SHA đã publish hoặc repository digest tương ứng; không dùng `latest`.
 
-Chỉ làm sau khi code đã commit/review, CI đạt, và team cấp quyền registry. Các placeholder dưới phải thay bằng namespace thật. Không gắn SHA của HEAD cho working tree còn sửa chưa commit.
+### 9.2. Push thủ công lên GHCR khi workflow gặp sự cố
+
+Đây chỉ là đường dự phòng khẩn cấp. Chỉ làm sau khi code đã commit/review, CI đạt, workflow publish không thể dùng, và team cấp quyền registry. Không gắn SHA của HEAD cho working tree còn sửa chưa commit; image build lại phải được smoke-test lại trước khi push.
 
 ```powershell
 git status --short
 $ErrorActionPreference = 'Stop'
 $releaseSha = (git rev-parse HEAD).Trim()
-$registryNamespace = 'your-github-owner'
 $localImage = "portfolio-api:$releaseSha"
-$releaseImage = "ghcr.io/${registryNamespace}/portfolio-api:$releaseSha"
+$releaseImage = "ghcr.io/hoangnam-dev/cg03-aboutme-api:$releaseSha"
 docker build --tag $localImage .
 if ($LASTEXITCODE -ne 0) { throw 'Docker build failed' }
 & ./scripts/Test-Container.ps1 -Image $localImage
