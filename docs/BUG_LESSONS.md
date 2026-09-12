@@ -994,16 +994,19 @@ membership restriction enforced for the managed Supabase owner.
 
 ### Correct fix
 
-Before altering the migration role's defaults, grant `portfolio_migrator` to
-`CURRENT_USER WITH ADMIN OPTION`. This also lets the database owner provision
-the separately held migration login without embedding credentials in the SQL
-artifact.
+PostgreSQL 16+ already gives a non-superuser role creator `ADMIN` on the role it
+creates, with `SET` and `INHERIT` disabled. Before altering the migration role's
+defaults, grant `portfolio_migrator` to `CURRENT_USER WITH SET TRUE, INHERIT
+FALSE`, execute the default-privilege statements under `SET LOCAL ROLE
+portfolio_migrator`, and then `RESET ROLE`. Do not attempt to grant `ADMIN` back
+to its own grantor.
 
 ### Prevention rule
 
-Access-policy scripts that alter another role's default privileges must first
-establish explicit membership, and tests must assert that this occurs before
-the first `ALTER DEFAULT PRIVILEGES` statement.
+Access-policy scripts that alter a role created by a PostgreSQL 16+
+non-superuser must enable `SET` on the creator's automatic membership without
+re-granting `ADMIN`, then change the defaults while that role is active. Test
+this path with a real non-superuser `CREATEROLE` identity.
 
 ### Regression test
 
@@ -1014,14 +1017,19 @@ the first `ALTER DEFAULT PRIVILEGES` statement.
 
 - Regression assertion failed before the fix with the missing-membership
   diagnostic.
-- Focused PostgreSQL integration test passed after the fix: 1 succeeded,
-  0 failed.
+- A production-equivalent non-superuser regression reproduced SQLSTATE 0LP01
+  from `WITH ADMIN OPTION` and SQLSTATE 42501 when membership was enabled without
+  activating the role.
+- The non-superuser regression passed after activating the migration role;
+  focused policy tests passed: 2 succeeded, 0 failed.
+- Live Supabase verification remains pending.
 - Live Supabase execution remains pending before this lesson can be marked
   Resolved.
 
 ### Relevant files
 
 - `docs/supabase/database-access.sql`
+- `docs/supabase/database-access-rollback.sql`
 - `tests/Portfolio.IntegrationTests/Persistence/DatabaseAccessPolicyTests.cs`
 
 ### Related lessons
