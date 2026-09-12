@@ -969,7 +969,7 @@ An empty application allowlist must keep the middleware out of the pipeline.
 
 ## BUG-2026-017 — Default privileges targeted an unrelated migration role
 
-- **Status:** Investigating
+- **Status:** Resolved
 - **Area:** PostgreSQL
 - **Feature:** Shared
 - **First observed:** 2026-09-12
@@ -1010,8 +1010,8 @@ this path with a real non-superuser `CREATEROLE` identity.
 
 ### Regression test
 
-`tests/Portfolio.IntegrationTests/Persistence/DatabaseAccessPolicyTests.cs` —
-`AccessPolicyDeniesDataApiRolesAndGrantsRuntimeDml`.
+- `DatabaseAccessPolicyTests.BootstrapGrantAllowsNonSuperuserRoleCreatorToAlterMigratorDefaults`
+- `DatabaseAccessPolicyTests.AccessPolicyDeniesDataApiRolesAndGrantsRuntimeDml`
 
 ### Verification
 
@@ -1022,9 +1022,9 @@ this path with a real non-superuser `CREATEROLE` identity.
   activating the role.
 - The non-superuser regression passed after activating the migration role;
   focused policy tests passed: 2 succeeded, 0 failed.
-- Live Supabase verification remains pending.
-- Live Supabase execution remains pending before this lesson can be marked
-  Resolved.
+- Live Supabase execution completed without error and returned effective
+  privileges `anon=false`, `authenticated=false`, and `portfolio_api=true` for
+  the verification query.
 
 ### Relevant files
 
