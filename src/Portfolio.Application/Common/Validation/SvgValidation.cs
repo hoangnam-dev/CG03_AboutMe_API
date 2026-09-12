@@ -20,6 +20,7 @@ public static partial class SvgValidation
         "stroke-dasharray", "stroke-dashoffset", "opacity", "fill-opacity", "stroke-opacity",
         "transform", "id", "offset", "stop-color", "stop-opacity", "gradientUnits",
         "gradientTransform", "fx", "fy", "fr", "clip-path", "clip-rule", "role", "aria-label",
+        "data-name",
     };
 
     public static async Task EnsureSafeAsync(Stream content, CancellationToken cancellationToken)

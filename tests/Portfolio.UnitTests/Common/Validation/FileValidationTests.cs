@@ -129,6 +129,15 @@ public sealed class FileValidationTests
         Assert.Equal(FileKind.Svg, result.Kind);
     }
 
+    [Fact]
+    public async Task AcceptsInertSvgLayerNameMetadata()
+    {
+        var markup = "<svg xmlns=\"http://www.w3.org/2000/svg\"><g data-name=\"Layer 3\"><path d=\"M1 1h2\"/></g></svg>";
+        var stream = new MemoryStream(System.Text.Encoding.UTF8.GetBytes(markup));
+
+        await SvgValidation.EnsureSafeAsync(stream, TestContext.Current.CancellationToken);
+    }
+
     [Theory]
     [InlineData("<svg xmlns=\"http://www.w3.org/2000/svg\"><script>alert(1)</script></svg>")]
     [InlineData("<svg xmlns=\"http://www.w3.org/2000/svg\"><path onload=\"alert(1)\"/></svg>")]
