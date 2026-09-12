@@ -5,7 +5,7 @@ public sealed record FileValidationOptions(
     IReadOnlySet<FileKind> AllowedKinds)
 {
     public static FileValidationOptions Images(long maxFileSize) =>
-        new(maxFileSize, new HashSet<FileKind>([FileKind.Png, FileKind.Jpeg, FileKind.WebP]));
+        new(maxFileSize, new HashSet<FileKind>([FileKind.Png, FileKind.Jpeg, FileKind.WebP, FileKind.Svg]));
 
     public static FileValidationOptions Pdf(long maxFileSize) =>
         new(maxFileSize, new HashSet<FileKind>([FileKind.Pdf]));
