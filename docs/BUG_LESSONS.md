@@ -964,3 +964,66 @@ An empty application allowlist must keep the middleware out of the pipeline.
 ### Related lessons
 
 - BUG-2026-013
+
+---
+
+## BUG-2026-017 — Default privileges targeted an unrelated migration role
+
+- **Status:** Investigating
+- **Area:** PostgreSQL
+- **Feature:** Shared
+- **First observed:** 2026-09-12
+- **Last updated:** 2026-09-12
+- **Tags:** `postgresql`, `default-privileges`, `roles`, `supabase`, `deployment`
+
+### Symptom
+
+Running `database-access.sql` as the managed Supabase database owner failed
+with SQLSTATE 42501 at `ALTER DEFAULT PRIVILEGES FOR ROLE portfolio_migrator`.
+
+### Root cause
+
+The script created `portfolio_migrator` but did not make the executing
+bootstrap identity a member of it. PostgreSQL only permits a role to change its
+own default privileges or those of a role in which it has membership.
+
+### Why it happened
+
+The integration test ran as a PostgreSQL superuser, which bypassed the
+membership restriction enforced for the managed Supabase owner.
+
+### Correct fix
+
+Before altering the migration role's defaults, grant `portfolio_migrator` to
+`CURRENT_USER WITH ADMIN OPTION`. This also lets the database owner provision
+the separately held migration login without embedding credentials in the SQL
+artifact.
+
+### Prevention rule
+
+Access-policy scripts that alter another role's default privileges must first
+establish explicit membership, and tests must assert that this occurs before
+the first `ALTER DEFAULT PRIVILEGES` statement.
+
+### Regression test
+
+`tests/Portfolio.IntegrationTests/Persistence/DatabaseAccessPolicyTests.cs` —
+`AccessPolicyDeniesDataApiRolesAndGrantsRuntimeDml`.
+
+### Verification
+
+- Regression assertion failed before the fix with the missing-membership
+  diagnostic.
+- Focused PostgreSQL integration test passed after the fix: 1 succeeded,
+  0 failed.
+- Live Supabase execution remains pending before this lesson can be marked
+  Resolved.
+
+### Relevant files
+
+- `docs/supabase/database-access.sql`
+- `tests/Portfolio.IntegrationTests/Persistence/DatabaseAccessPolicyTests.cs`
+
+### Related lessons
+
+- BUG-2026-011
