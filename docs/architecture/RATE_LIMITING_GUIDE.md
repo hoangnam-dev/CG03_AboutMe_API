@@ -327,7 +327,7 @@ Không khắc phục bằng cách đọc tùy ý `X-Forwarded-For`. Quy trình a
 5. cấu hình proxy ghi đè header từ Internet theo policy đã duyệt;
 6. kiểm thử cả request qua proxy và request spoof header trực tiếp.
 
-Repository hiện **chưa bật Forwarded Headers Middleware**. Vì vậy behavior đang được đảm bảo là dùng IP kết nối và bỏ qua header do client tự gửi. Trước khi triển khai sau proxy nhiều người dùng, đội vận hành phải hoàn thiện trust boundary này; không tự thêm `ForwardedHeaders.All` hoặc xóa danh sách proxy tin cậy.
+Repository bật Forwarded Headers Middleware khi có ít nhất một IP literal trong `ReverseProxy:KnownProxies`. Middleware chỉ nhận `X-Forwarded-For` và `X-Forwarded-Proto`, giới hạn một hop, và chạy trước rate limiting. Production từ chối khởi động khi allowlist rỗng hoặc sai; Development không cấu hình proxy thì middleware không chạy. Deployment phải giữ port ứng dụng private và cấu hình đúng IP peer trực tiếp của Nginx/Docker; không tin cậy tùy ý mọi proxy hoặc một dải mạng rộng.
 
 ## 8. Khi nào cần phương án khác?
 

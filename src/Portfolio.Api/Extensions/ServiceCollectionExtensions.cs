@@ -3,6 +3,7 @@ using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Cors.Infrastructure;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
@@ -38,6 +39,15 @@ public static class ServiceCollectionExtensions
         services.AddOptions<FrontendOptions>()
             .Bind(configuration.GetSection(FrontendOptions.SectionName))
             .ValidateOnStart();
+
+        services.AddSingleton<IValidateOptions<ReverseProxyOptions>>(
+            new ReverseProxyOptionsValidator(!allowUnconfiguredDependencies));
+        services.AddOptions<ReverseProxyOptions>()
+            .Bind(configuration.GetSection(ReverseProxyOptions.SectionName))
+            .ValidateOnStart();
+        services.AddSingleton<
+            IConfigureOptions<ForwardedHeadersOptions>,
+            ConfigureForwardedHeadersOptions>();
 
         services.AddSingleton<IValidateOptions<UploadOptions>, UploadOptionsValidator>();
         services.AddOptions<UploadOptions>()

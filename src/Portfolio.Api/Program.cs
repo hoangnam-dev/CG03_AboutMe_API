@@ -1,6 +1,8 @@
 using System.Globalization;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
+using Microsoft.Extensions.Options;
 using Portfolio.Api.Authentication;
+using Portfolio.Api.Configuration;
 using Portfolio.Api.Extensions;
 using Portfolio.Api.Health;
 using Portfolio.Api.Middleware;
@@ -27,6 +29,12 @@ builder.Services
         allowUnconfiguredDependencies: builder.Environment.IsDevelopment());
 
 var app = builder.Build();
+
+var reverseProxy = app.Services.GetRequiredService<IOptions<ReverseProxyOptions>>().Value;
+if (reverseProxy.KnownProxies.Length > 0)
+{
+    app.UseForwardedHeaders();
+}
 
 if (!app.Environment.IsDevelopment())
 {
