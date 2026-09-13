@@ -493,6 +493,10 @@ Ghi lại repository digest do registry trả, source SHA và tag. Hosting priva
 
 ## 10. Kiểm tra sau deploy và rollback
 
+Khi DigitalOcean CD đã được cấu hình, push thông thường vào `main` chạy theo chuỗi `verify -> publish -> deploy`. Job `deploy` chỉ nhận các biến SSH của GitHub Environment `production`; application secrets, PFX và database credentials vẫn nằm trên Droplet. Script `scripts/deploy-production.sh` kiểm tra candidate trên loopback port `8081`, chuyển container production ở port `8080`, giữ `cg03aboutme-api-previous`, và tự rollback nếu health check sau cutover thất bại.
+
+Nếu push có thay đổi trong `src/Portfolio.Infrastructure/Persistence/Migrations/`, workflow cố ý dừng trước SSH deployment. Chạy quy trình migration có kiểm soát trong `MIGRATIONS.md`; không thêm migration credential vào workflow deploy và không cho API tự chạy migration khi startup.
+
 PowerShell 7, target HTTPS, frontend Origin đúng allowlist và Profile đã có dữ liệu:
 
 ```powershell

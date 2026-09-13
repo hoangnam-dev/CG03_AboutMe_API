@@ -59,11 +59,91 @@ public sealed class DeploymentAssetTests
         Assert.DoesNotContain("docker build", publishJob, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void ProductionDeployScriptUsesImmutableCandidateAndRollbackGates()
+    {
+        var script = Read("scripts/deploy-production.sh");
+
+        Assert.Contains("set -Eeuo pipefail", script, StringComparison.Ordinal);
+        Assert.Contains(
+            "ghcr.io/hoangnam-dev/cg03-aboutme-api:${release_sha}",
+            script,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "--publish \"127.0.0.1:${host_port}:8080\"",
+            script,
+            StringComparison.Ordinal);
+        Assert.Contains("run_container \"$candidate_name\" 8081", script, StringComparison.Ordinal);
+        Assert.Contains(
+            "run_container \"$production_name\" 8080 --restart unless-stopped",
+            script,
+            StringComparison.Ordinal);
+        Assert.Contains("/health/ready", script, StringComparison.Ordinal);
+        Assert.Contains("/health/supabase", script, StringComparison.Ordinal);
+        Assert.Contains("cg03aboutme-api-previous", script, StringComparison.Ordinal);
+        Assert.Contains("rollback", script, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("deployed-sha", script, StringComparison.Ordinal);
+        Assert.DoesNotContain("latest", script, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("docker system prune", script, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void ProductionDeployScriptRestartsCurrentContainerWhenRenameFails()
+    {
+        var script = Read("scripts/deploy-production.sh");
+
+        Assert.Contains(
+            "if ! docker rename \"$production_name\" \"$previous_name\"; then",
+            script,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "docker start \"$production_name\" >/dev/null || true",
+            script,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "fail \"Could not preserve the current production container.\"",
+            script,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ShellDeploymentAssetsKeepUnixLineEndings()
+    {
+        var attributes = Read(".gitattributes");
+
+        Assert.Contains("*.sh text eol=lf", attributes, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ProductionDeployJobUsesRestrictedSshAfterPublish()
+    {
+        var workflow = Read(".github/workflows/backend-ci.yml").ReplaceLineEndings("\n");
+        var deployStart = workflow.IndexOf("\n  deploy:\n", StringComparison.Ordinal);
+
+        Assert.True(deployStart >= 0, "The workflow must define a deploy job.");
+        var deployJob = workflow[deployStart..];
+        Assert.Contains("needs: publish", deployJob, StringComparison.Ordinal);
+        Assert.Contains("environment: production", deployJob, StringComparison.Ordinal);
+        Assert.Contains(
+            "src/Portfolio.Infrastructure/Persistence/Migrations/",
+            deployJob,
+            StringComparison.Ordinal);
+        Assert.Contains("StrictHostKeyChecking=yes", deployJob, StringComparison.Ordinal);
+        Assert.Contains("secrets.PRODUCTION_SSH_PRIVATE_KEY", deployJob, StringComparison.Ordinal);
+        Assert.Contains("secrets.PRODUCTION_SSH_KNOWN_HOSTS", deployJob, StringComparison.Ordinal);
+        Assert.Contains("vars.PRODUCTION_SSH_HOST", deployJob, StringComparison.Ordinal);
+        Assert.Contains("vars.PRODUCTION_SSH_USER", deployJob, StringComparison.Ordinal);
+        Assert.Contains("deploy ${{ github.sha }}", deployJob, StringComparison.Ordinal);
+        Assert.DoesNotContain("ssh-keyscan", deployJob, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("packages: write", deployJob, StringComparison.Ordinal);
+    }
+
     [Theory]
     [InlineData(".dockerignore")]
     [InlineData(".env.example")]
     [InlineData("scripts/Test-Container.ps1")]
     [InlineData("scripts/Test-Deployment.ps1")]
+    [InlineData("scripts/deploy-production.sh")]
     [InlineData("docs/operations/ENVIRONMENT.md")]
     [InlineData("docs/operations/MIGRATIONS.md")]
     [InlineData("docs/operations/DEPLOYMENT.md")]

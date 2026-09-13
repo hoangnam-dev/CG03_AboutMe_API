@@ -93,3 +93,70 @@ jobs:
 
       - name: Record published digest
         run: docker image inspect ghcr.io/hoangnam-dev/cg03-aboutme-api:${{ github.sha }} --format '{{json .RepoDigests}}'
+
+  deploy:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: publish
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: production
+    permissions:
+      contents: read
+    concurrency:
+      group: cg03aboutme-production
+      cancel-in-progress: false
+    env:
+      SSH_HOST: ${{ vars.PRODUCTION_SSH_HOST }}
+      SSH_PORT: ${{ vars.PRODUCTION_SSH_PORT }}
+      SSH_USER: ${{ vars.PRODUCTION_SSH_USER }}
+    steps:
+      - name: Check out deployment contracts
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Block automatic deployment when migrations changed
+        shell: bash
+        env:
+          BEFORE_SHA: ${{ github.event.before }}
+          RELEASE_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          if ! git cat-file -e "${BEFORE_SHA}^{commit}" 2>/dev/null; then
+            echo "::error::Cannot verify the previous main commit; deploy manually using docs/operations/DEPLOYMENT.md."
+            exit 1
+          fi
+          if ! git diff --quiet "$BEFORE_SHA" "$RELEASE_SHA" -- src/Portfolio.Infrastructure/Persistence/Migrations/; then
+            echo "::error::EF Core migrations changed. Follow docs/operations/MIGRATIONS.md and deploy manually after the controlled migration."
+            exit 1
+          fi
+
+      - name: Configure pinned production SSH identity
+        shell: bash
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.PRODUCTION_SSH_PRIVATE_KEY }}
+          SSH_KNOWN_HOSTS: ${{ secrets.PRODUCTION_SSH_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          test -n "$SSH_HOST"
+          test -n "$SSH_PORT"
+          test -n "$SSH_USER"
+          test -n "$SSH_PRIVATE_KEY"
+          test -n "$SSH_KNOWN_HOSTS"
+          umask 077
+          mkdir -p "$HOME/.ssh"
+          printf '%s\n' "$SSH_PRIVATE_KEY" > "$HOME/.ssh/id_ed25519"
+          printf '%s\n' "$SSH_KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+
+      - name: Deploy published SHA image
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh \
+            -i "$HOME/.ssh/id_ed25519" \
+            -o BatchMode=yes \
+            -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes \
+            -p "$SSH_PORT" \
+            "$SSH_USER@$SSH_HOST" \
+            "deploy ${{ github.sha }}"
