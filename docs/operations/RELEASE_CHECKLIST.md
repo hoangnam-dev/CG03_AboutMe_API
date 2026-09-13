@@ -18,6 +18,9 @@
 
 ## Deploy and verify
 
+- [ ] GitHub Environment `production` is restricted to `main` and contains the three `PRODUCTION_SSH_*` variables plus the two pinned SSH secrets.
+- [ ] The root-owned `/opt/cg03aboutme-be/bin/deploy-production.sh` matches the reviewed repository script; the dedicated Actions key is restricted to that forced command.
+- [ ] A push containing EF migration changes stopped before SSH deployment and was handled through `MIGRATIONS.md`.
 - [ ] Platform health path is `/health`; rollout gate is `/health/ready`.
 - [ ] Liveness/readiness, public profile, ProblemDetails, and authentication checks pass.
 - [ ] Contact throttling returns 429 when explicitly tested.
