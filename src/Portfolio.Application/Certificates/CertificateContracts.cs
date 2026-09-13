@@ -14,7 +14,7 @@ public sealed record CertificateWriteRequest(
     int DisplayOrder,
     bool IsPublished,
     IReadOnlyDictionary<string, CertificateTranslationRequest> Translations,
-    IReadOnlyList<Guid> TechnologyIds);
+    IReadOnlyList<Guid>? TechnologyIds);
 
 public sealed record CertificateTechnologyResponse(
     Guid Id,
@@ -65,7 +65,7 @@ public sealed record CertificateAdminResponse(
     int DisplayOrder,
     bool IsPublished,
     IReadOnlyDictionary<string, CertificateTranslationRequest> Translations,
-    IReadOnlyList<Guid> TechnologyIds,
+    IReadOnlyList<Guid>? TechnologyIds,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] Uri? DownloadUrl,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] DateTimeOffset? DownloadUrlExpiresAt,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] Uri? ImageUrl,

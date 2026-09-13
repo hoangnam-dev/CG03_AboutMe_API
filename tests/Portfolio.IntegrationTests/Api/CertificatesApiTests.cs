@@ -7,6 +7,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Portfolio.Application.Certificates;
 using Portfolio.Application.Common.Models;
+using Portfolio.Application.Common.Storage;
 using Xunit;
 
 namespace Portfolio.IntegrationTests.Api;
@@ -41,6 +42,14 @@ public sealed class CertificatesApiTests : IClassFixture<DatabaseOptionalApiFact
         Assert.True(item.TryGetProperty("delete", out _));
         Assert.True(paths.TryGetProperty("/api/v1/admin/certificates/{id}/file", out var file));
         Assert.True(file.TryGetProperty("post", out _));
+
+        var createContent = collection.GetProperty("post")
+            .GetProperty("requestBody")
+            .GetProperty("content");
+        Assert.True(createContent.TryGetProperty("multipart/form-data", out var multipart));
+        var properties = multipart.GetProperty("schema").GetProperty("properties");
+        Assert.True(properties.TryGetProperty("payload", out _));
+        Assert.True(properties.TryGetProperty("file", out _));
     }
 
     [Theory]
@@ -79,6 +88,78 @@ public sealed class CertificatesApiTests : IClassFixture<DatabaseOptionalApiFact
     }
 
     [Fact]
+    public async Task CreateCertificateWithoutTechnologyIdsReturnsCreatedWithEmptyTechnologyIds()
+    {
+        await using var factory = CreateFactory(new RepositoryStub());
+        using var client = factory.CreateClient(new WebApplicationFactoryClientOptions { AllowAutoRedirect = false });
+        using var content = new MultipartFormDataContent();
+        content.Add(new StringContent(JsonSerializer.Serialize(new
+        {
+            issuer = "IIG Vietnam · ETS TOEIC",
+            issuedDate = "2026-08-09",
+            isPublished = true,
+            translations = new Dictionary<string, object>
+            {
+                ["en"] = new { name = "TOEIC Listening & Reading · 655" },
+                ["vi"] = new { name = "TOEIC Nghe & Đọc · 655" },
+            },
+        })), "payload");
+        using var request = new HttpRequestMessage(HttpMethod.Post, "/api/v1/admin/certificates")
+        {
+            Content = content,
+        };
+        request.Headers.Authorization = new AuthenticationHeaderValue(
+            "Bearer", _factory.CreateToken(role: "Admin"));
+
+        var response = await client.SendAsync(request, TestContext.Current.CancellationToken);
+        using var body = JsonDocument.Parse(
+            await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken));
+
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+        Assert.Equal(0, body.RootElement.GetProperty("data").GetProperty("technologyIds").GetArrayLength());
+    }
+
+    [Fact]
+    public async Task CreateCertificateMultipartPersistsEvidenceAndReturnsSignedUrl()
+    {
+        var repository = new RepositoryStub();
+        var storage = new StorageStub();
+        await using var factory = CreateFactory(repository, storage);
+        using var client = factory.CreateClient(new WebApplicationFactoryClientOptions { AllowAutoRedirect = false });
+        using var content = new MultipartFormDataContent();
+        content.Add(new StringContent(JsonSerializer.Serialize(new
+        {
+            issuer = "IIG Vietnam · ETS TOEIC",
+            issuedDate = "2026-08-09",
+            isPublished = true,
+            translations = new Dictionary<string, object>
+            {
+                ["en"] = new { name = "TOEIC Listening & Reading · 655" },
+                ["vi"] = new { name = "TOEIC Nghe & Đọc · 655" },
+            },
+        })), "payload");
+        var file = new ByteArrayContent("%PDF-test"u8.ToArray());
+        file.Headers.ContentType = new MediaTypeHeaderValue("application/pdf");
+        content.Add(file, "file", "toeic.pdf");
+        using var request = new HttpRequestMessage(HttpMethod.Post, "/api/v1/admin/certificates")
+        {
+            Content = content,
+        };
+        request.Headers.Authorization = new AuthenticationHeaderValue(
+            "Bearer", _factory.CreateToken(role: "Admin"));
+
+        var response = await client.SendAsync(request, TestContext.Current.CancellationToken);
+        using var body = JsonDocument.Parse(
+            await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken));
+
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+        Assert.NotNull(repository.Added);
+        Assert.Equal(storage.UploadedObjectKey, repository.Added.FileUrl);
+        Assert.Equal("https://storage.example/signed", body.RootElement
+            .GetProperty("data").GetProperty("downloadUrl").GetString());
+    }
+
+    [Fact]
     public async Task HiddenCredentialIdIsAbsentFromPublicJson()
     {
         var projection = new CertificatePublicProjection(
@@ -97,23 +178,60 @@ public sealed class CertificatesApiTests : IClassFixture<DatabaseOptionalApiFact
         Assert.DoesNotContain("objectKey", json, StringComparison.OrdinalIgnoreCase);
     }
 
-    private WebApplicationFactory<Program> CreateFactory(ICertificateRepository repository) =>
+    private WebApplicationFactory<Program> CreateFactory(
+        ICertificateRepository repository,
+        IFileStorage? storage = null) =>
         _factory.WithWebHostBuilder(builder => builder.ConfigureServices(services =>
         {
             services.RemoveAll<ICertificateRepository>();
             services.AddSingleton(repository);
+            if (storage is not null)
+            {
+                services.RemoveAll<IFileStorage>();
+                services.AddSingleton(storage);
+            }
         }));
 
     private sealed class RepositoryStub : ICertificateRepository
     {
         public IReadOnlyList<CertificatePublicProjection>? PublicItems { get; init; } = [];
+        public Certificate? Added { get; private set; }
 
         public Task<IReadOnlyList<CertificatePublicProjection>?> GetPublicAsync(string slug, string locale, CancellationToken token) => Task.FromResult(PublicItems);
         public Task<CertificateEntityPage> GetCertificatesAsync(CertificateAdminQuery query, CancellationToken token) => Task.FromResult(new CertificateEntityPage([], 0, query.Page, query.PageSize));
         public Task<Certificate?> GetAsync(Guid id, bool tracked, CancellationToken token) => Task.FromResult<Certificate?>(null);
         public Task<bool> TechnologyIdsExistAsync(IReadOnlyCollection<Guid> ids, CancellationToken token) => Task.FromResult(true);
-        public Task AddAsync(Certificate certificate, CancellationToken token) => Task.CompletedTask;
+        public Task AddAsync(Certificate certificate, CancellationToken token)
+        {
+            Added = certificate;
+            return Task.CompletedTask;
+        }
         public void Remove(Certificate certificate) { }
         public Task SaveChangesAsync(CancellationToken token) => Task.CompletedTask;
+    }
+
+    private sealed class StorageStub : IFileStorage
+    {
+        public string? UploadedObjectKey { get; private set; }
+
+        public Task<StorageObject> UploadAsync(StorageUpload upload, CancellationToken cancellationToken)
+        {
+            UploadedObjectKey = upload.ObjectKey;
+            return Task.FromResult(new StorageObject(upload.Bucket, upload.ObjectKey));
+        }
+
+        public Task DeleteIfExistsAsync(
+            string bucket, string objectKey, CancellationToken cancellationToken) =>
+            Task.CompletedTask;
+
+        public Uri GetPublicReadUrl(string bucket, string objectKey) =>
+            throw new NotSupportedException();
+
+        public Task<Uri> CreateSignedReadUrlAsync(
+            string bucket,
+            string objectKey,
+            TimeSpan lifetime,
+            CancellationToken cancellationToken) =>
+            Task.FromResult(new Uri("https://storage.example/signed"));
     }
 }

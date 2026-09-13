@@ -35,7 +35,7 @@ public sealed record ProjectWriteRequest(
     IReadOnlyDictionary<string, ProjectTranslationRequest> Translations,
     IReadOnlyList<Guid> TechnologyIds,
     IReadOnlyList<ProjectHighlightRequest> Highlights,
-    IReadOnlyList<ProjectImageMetadataRequest> Images);
+    IReadOnlyList<ProjectImageMetadataRequest>? Images);
 
 public sealed record ProjectPublishRequest(bool IsPublished);
 public sealed record ProjectOrderItem(Guid Id, int DisplayOrder);

@@ -259,14 +259,21 @@ Production phải có backup, kiểm tra migration history, review forward/Down 
 
 ```powershell
 $jwtPfxPath = (Resolve-Path '.secrets/jwt-signing-development.pfx').Path
+$logPath = (New-Item -ItemType Directory -Force 'logs').FullName
 docker run --detach --name portfolio-api-local `
     --publish 127.0.0.1:18080:8080 `
     --env-file .env.docker `
     --env ASPNETCORE_ENVIRONMENT=Development `
     --env Jwt__SigningCertificatePath=/run/secrets/jwt-signing.pfx `
+    --env Serilog__FilePath=/app/logs/portfolio-.log `
     --mount "type=bind,source=$jwtPfxPath,target=/run/secrets/jwt-signing.pfx,readonly" `
+    --mount "type=bind,source=$logPath,target=/app/logs" `
     portfolio-api:local
 ```
+
+Serilog vẫn ghi ra console và đồng thời tạo một file mỗi ngày trong `logs/`.
+Các file quá 7 ngày được tự động xóa khi sink ghi log; mỗi file được roll thêm
+khi đạt 100 MB. Có thể tìm request lỗi theo `requestId` trả về từ ProblemDetails.
 
 Trong PowerShell, dấu backtick cuối dòng không được có dấu cách phía sau. Lệnh `--env` cụ thể phía sau ghi đè key cùng tên từ env file. Trên Linux, quyền đọc mount phải cho phép UID runtime đọc PFX; không chmod toàn bộ secrets thành world-writable.
 
@@ -298,6 +305,92 @@ docker stop portfolio-api-local
 docker rm portfolio-api-local
 # Chạy lại docker run ở trên với file cấu hình đã cập nhật.
 ```
+
+### 7.1. Áp dụng code mới khi local đã có image/container
+
+Image là bản đóng gói bất biến tại thời điểm `docker build`. Việc sửa source code trên máy không làm thay đổi image hoặc container đang chạy. Build lại cùng tag `portfolio-api:local` chỉ chuyển tag sang image mới; container cũ vẫn tiếp tục dùng image ID cũ cho đến khi được xóa và tạo lại.
+
+| Thay đổi | Lệnh cần dùng | Có nhận code/cấu hình mới không? |
+| --- | --- | --- |
+| Không đổi code/cấu hình, process chỉ cần khởi động lại | `docker restart portfolio-api-local` | Không có dữ liệu mới để nhận |
+| Container đang dừng, muốn chạy lại đúng bản cũ | `docker start portfolio-api-local` | Không; vẫn là image và cấu hình cũ |
+| Đổi source, `Dockerfile` hoặc package | Build image mới, rồi recreate container | Có |
+| Chỉ đổi `.env.docker`, port hoặc mount | Không cần build; recreate container | Có |
+| Đã build image mới cùng tag nhưng chưa recreate | Recreate container | Có; container mới mới trỏ tới image ID mới |
+
+Quy trình an toàn dưới đây build trước. Nếu build thất bại, container cũ chưa bị dừng. Chạy từ backend repository root chứa `Portfolio.sln`:
+
+```powershell
+$imageName = 'portfolio-api:local'
+$containerName = 'portfolio-api-local'
+$hostPort = 18080
+$jwtPfxPath = (Resolve-Path '.secrets/jwt-signing-development.pfx').Path
+$logPath = (New-Item -ItemType Directory -Force 'logs').FullName
+
+# 1. Đóng gói source code hiện tại thành image mới.
+docker build --tag $imageName .
+if ($LASTEXITCODE -ne 0) { throw 'Docker build failed; container cũ vẫn chưa bị thay đổi.' }
+
+# 2. Chỉ dừng và xóa đúng container local của API nếu nó đang tồn tại.
+$existingContainerId = docker container ls --all --quiet --filter "name=^/${containerName}$"
+if ($existingContainerId) {
+    docker stop $containerName
+    if ($LASTEXITCODE -ne 0) { throw 'Không thể dừng container cũ.' }
+
+    docker rm $containerName
+    if ($LASTEXITCODE -ne 0) { throw 'Không thể xóa container cũ.' }
+}
+
+# 3. Tạo container mới từ image vừa build.
+docker run --detach --name $containerName `
+    --publish "127.0.0.1:${hostPort}:8080" `
+    --env-file .env.docker `
+    --env ASPNETCORE_ENVIRONMENT=Development `
+    --env Jwt__SigningCertificatePath=/run/secrets/jwt-signing.pfx `
+    --env Serilog__FilePath=/app/logs/portfolio-.log `
+    --mount "type=bind,source=$jwtPfxPath,target=/run/secrets/jwt-signing.pfx,readonly" `
+    --mount "type=bind,source=$logPath,target=/app/logs" `
+    $imageName
+if ($LASTEXITCODE -ne 0) { throw 'Không thể tạo container mới.' }
+
+# 4. Kiểm tra container, health và log startup.
+docker ps --filter "name=^/${containerName}$"
+curl.exe -i "http://127.0.0.1:${hostPort}/health"
+curl.exe -i "http://127.0.0.1:${hostPort}/health/ready"
+curl.exe -i "http://127.0.0.1:${hostPort}/health/supabase"
+docker logs --tail 100 $containerName
+```
+
+Nếu API cần thêm thời gian khởi động, đợi vài giây rồi gọi lại health. Với cấu hình Supabase đầy đủ, cả ba endpoint phải trả 200. Log Serilog có thể xem qua `docker logs` và trong thư mục `logs/` trên host; mount này giữ file log khi container bị xóa.
+
+Việc `docker stop`/`docker rm` ở trên chỉ tác động đến container có tên chính xác `portfolio-api-local`. Nó không xóa image, `.env.docker`, certificate, thư mục log đã mount hoặc dữ liệu PostgreSQL/Storage trên Supabase. Dữ liệu ghi riêng bên trong filesystem của container và không được mount sẽ mất khi xóa container.
+
+Nếu **không đổi code** mà chỉ đổi `.env.docker`, port hoặc mount, bỏ qua bước 1 nhưng vẫn thực hiện bước 2–4. Nếu chỉ có image và chưa từng có container, bước 2 tự bỏ qua và lệnh `docker run` sẽ tạo container mới.
+
+Kiểm tra image/container đang có và theo dõi log realtime:
+
+```powershell
+docker image ls portfolio-api
+docker ps --all --filter name=portfolio-api-local
+docker inspect portfolio-api-local --format 'Container image ID={{.Image}}'
+docker image inspect portfolio-api:local --format 'Current tag image ID={{.Id}}'
+docker logs --follow --tail 100 portfolio-api-local
+```
+
+Hai image ID từ `docker inspect` và `docker image inspect` phải giống nhau sau khi recreate. Nhấn `Ctrl+C` chỉ thoát chế độ theo dõi log, không dừng container.
+
+Các lỗi thường gặp khi chạy lại:
+
+| Lỗi | Nguyên nhân thường gặp | Cách xử lý |
+| --- | --- | --- |
+| Tên container đã được dùng | Bỏ qua bước xóa container cũ | `docker stop portfolio-api-local`, `docker rm portfolio-api-local`, rồi chạy lại bước 3 |
+| Port đã được dùng | Process/container khác giữ `18080` | Dừng đúng process đó hoặc đổi `$hostPort`; đồng thời cập nhật API base URL của frontend |
+| Mount source path does not exist | Thiếu PFX hoặc sai thư mục chạy lệnh | Chạy tại backend root và tạo certificate theo mục 5.2 |
+| Health không phản hồi | Container đang khởi động hoặc đã exit | `docker ps --all` và `docker logs --tail 100 portfolio-api-local` |
+| Readiness trả 503 | API chạy nhưng DB/Storage chưa sẵn sàng | Kiểm tra `/health/supabase`, connection string, bucket và log |
+| Code vẫn là bản cũ | Chỉ `restart`, hoặc build mới nhưng chưa recreate | Chạy đủ build và bước 2–4 ở trên |
+
+Không dùng `docker restart` để áp dụng source code hoặc `.env.docker` mới. Không dùng `docker system prune`, `docker image prune -a` hoặc xóa volume như một bước cập nhật thông thường; các lệnh đó có phạm vi rộng và không cần thiết cho quy trình này.
 
 ## 8. Chuẩn bị Production
 
