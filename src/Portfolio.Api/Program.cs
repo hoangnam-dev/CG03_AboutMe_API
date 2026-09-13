@@ -5,6 +5,7 @@ using Portfolio.Api.Authentication;
 using Portfolio.Api.Configuration;
 using Portfolio.Api.Extensions;
 using Portfolio.Api.Health;
+using Portfolio.Api.Logging;
 using Portfolio.Api.Middleware;
 using Portfolio.Application;
 using Portfolio.Infrastructure;
@@ -13,11 +14,13 @@ using Serilog;
 
 var builder = WebApplication.CreateBuilder(args);
 
-builder.Host.UseSerilog((context, services, logger) => logger
-    .ReadFrom.Configuration(context.Configuration)
-    .ReadFrom.Services(services)
-    .Enrich.FromLogContext()
-    .WriteTo.Console(formatProvider: CultureInfo.InvariantCulture));
+builder.Host.UseSerilog((context, services, logger) => PortfolioFileLogging.Configure(
+    logger
+        .ReadFrom.Configuration(context.Configuration)
+        .ReadFrom.Services(services)
+        .Enrich.FromLogContext()
+        .WriteTo.Console(formatProvider: CultureInfo.InvariantCulture),
+    context.Configuration));
 
 builder.Services
     .AddApplication()
@@ -43,7 +46,9 @@ if (!app.Environment.IsDevelopment())
 
 app.UseExceptionHandler();
 app.UseHttpsRedirection();
-app.UseSerilogRequestLogging();
+app.UseSerilogRequestLogging(options =>
+    options.EnrichDiagnosticContext = (diagnosticContext, httpContext) =>
+        diagnosticContext.Set("RequestId", httpContext.TraceIdentifier));
 app.UseCors("Frontend");
 app.UseMiddleware<AuthOriginValidationMiddleware>();
 app.UseAuthentication();

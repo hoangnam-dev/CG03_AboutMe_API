@@ -1035,3 +1035,144 @@ this path with a real non-superuser `CREATEROLE` identity.
 ### Related lessons
 
 - BUG-2026-011
+
+---
+
+## BUG-2026-018 — Optional certificate technologies were implicitly required
+
+- **Status:** Resolved
+- **Area:** API | Application
+- **Feature:** Certificates
+- **First observed:** 2026-09-13
+- **Last updated:** 2026-09-13
+- **Tags:** `aspnet-core`, `api-controller`, `model-binding`, `nullable`, `optional-collection`
+
+### Symptom
+
+Creating a certificate without `technologyIds` returned HTTP 400 even though a
+certificate does not require any technology associations.
+
+### Root cause
+
+The request DTO exposed `TechnologyIds` as a non-nullable collection, so
+`[ApiController]` treated an omitted value as required. After making the DTO
+nullable, application validation still rejected `null` instead of applying the
+empty-collection semantics required by the domain.
+
+### Why it happened
+
+Optional association cardinality was represented as request-field nullability
+without defining how omitted input should be normalized at the application
+boundary.
+
+### Correct fix
+
+Keep `TechnologyIds` nullable on the write request and normalize omitted or
+`null` input to an empty list before validation, existence checks, and aggregate
+replacement.
+
+### Prevention rule
+
+For optional request collections under `[ApiController]`, use nullable input and
+normalize `null` once at the application boundary; responses should expose the
+resulting collection as empty rather than requiring clients to send an empty
+array.
+
+### Regression test
+
+`tests/Portfolio.IntegrationTests/Api/CertificatesApiTests.cs` —
+`CreateCertificateWithoutTechnologyIdsReturnsCreatedWithEmptyTechnologyIds`.
+
+### Verification
+
+- The focused regression failed before the service fix with HTTP 400 and passed
+  afterward with HTTP 201 and `technologyIds: []`.
+- Certificate service unit tests passed: 9 succeeded, 0 failed.
+- Certificate API integration tests passed: 8 succeeded, 0 failed.
+- Release build passed with 0 warnings and 0 errors.
+- Full solution tests passed: 393 succeeded, 0 failed.
+
+### Relevant files
+
+- `src/Portfolio.Application/Certificates/CertificateContracts.cs`
+- `src/Portfolio.Application/Certificates/CertificateService.cs`
+- `tests/Portfolio.IntegrationTests/Api/CertificatesApiTests.cs`
+- `docs/api/API_CONTRACT.md`
+
+### Related lessons
+
+- None
+
+---
+
+## BUG-2026-019 — Certificate create ignored multipart evidence
+
+- **Status:** Resolved
+- **Area:** API | Application | Storage
+- **Feature:** Certificates
+- **First observed:** 2026-09-13
+- **Last updated:** 2026-09-13
+- **Tags:** `aspnet-core`, `multipart`, `model-binding`, `supabase-storage`, `compensation`
+
+### Symptom
+
+The frontend posted certificate metadata as the multipart `payload` part and
+evidence as `file`. Certificate metadata was created, but the Storage bucket
+remained empty and `certificates.file_url`/`image_url` remained null.
+
+### Root cause
+
+`POST /api/v1/admin/certificates` accepted only a JSON `[FromBody]
+CertificateWriteRequest`. Its controller/service path never bound the multipart
+file or invoked certificate evidence storage; upload existed only on the
+separate `/{id}/file` endpoint.
+
+### Why it happened
+
+The frontend request contract and the API action's declared media type diverged,
+while metadata creation and evidence upload were implemented as disconnected
+use cases.
+
+### Correct fix
+
+Bind certificate creation as multipart `payload` plus optional `file`. Parse the
+payload at the API boundary, validate/upload evidence in the application
+service, persist its server-generated object key with the new certificate, and
+return the applicable signed URL. Compensate the uploaded object if persistence
+fails.
+
+### Prevention rule
+
+For multipart create endpoints, add an API-level binding test using the exact
+client part names and verify both durable metadata and storage side effects;
+never assume an `IFormFile` part reaches a JSON `[FromBody]` action.
+
+### Regression test
+
+- `tests/Portfolio.IntegrationTests/Api/CertificatesApiTests.cs` —
+  `CreateCertificateMultipartPersistsEvidenceAndReturnsSignedUrl`.
+- `tests/Portfolio.UnitTests/Certificates/CertificateServiceTests.cs` —
+  `CreateWithEvidencePersistsUploadedKeyAndReturnsSignedUrl` and
+  `CreateWithEvidenceDeletesUploadedObjectWhenPersistenceFails`.
+
+### Verification
+
+- The multipart API regression failed before the controller fix with HTTP 415
+  and passed afterward with HTTP 201.
+- Certificate service tests passed: 11 succeeded, 0 failed.
+- Certificate API tests passed: 9 succeeded, 0 failed.
+- Release build passed with 0 warnings and 0 errors.
+- Full solution tests passed: 396 succeeded, 0 failed.
+
+### Relevant files
+
+- `src/Portfolio.Api/Controllers/CertificatesController.cs`
+- `src/Portfolio.Application/Certificates/ICertificateService.cs`
+- `src/Portfolio.Application/Certificates/CertificateService.cs`
+- `tests/Portfolio.IntegrationTests/Api/CertificatesApiTests.cs`
+- `tests/Portfolio.UnitTests/Certificates/CertificateServiceTests.cs`
+- `docs/api/API_CONTRACT.md`
+
+### Related lessons
+
+- BUG-2026-018

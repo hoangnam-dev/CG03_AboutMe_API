@@ -1,8 +1,10 @@
+using System.Text.Json;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Portfolio.Api.Authorization;
 using Portfolio.Api.Models;
 using Portfolio.Application.Certificates;
+using Portfolio.Application.Common.Exceptions;
 
 namespace Portfolio.Api.Controllers;
 
@@ -28,6 +30,8 @@ public sealed class CertificatesController(ICertificateService certificateServic
 [Route("api/v1/admin/certificates")]
 public sealed class AdminCertificatesController(ICertificateService certificateService) : ControllerBase
 {
+    private static readonly JsonSerializerOptions WebJsonOptions = new(JsonSerializerDefaults.Web);
+
     [HttpGet]
     [ProducesResponseType<ApiResponse<IReadOnlyList<CertificateAdminResponse>>>(StatusCodes.Status200OK)]
     public async Task<ActionResult<ApiResponse<IReadOnlyList<CertificateAdminResponse>>>> Get(
@@ -54,17 +58,54 @@ public sealed class AdminCertificatesController(ICertificateService certificateS
         Ok(ApiResponse.Success(await certificateService.GetCertificateAsync(id, cancellationToken)));
 
     [HttpPost]
+    [Consumes("multipart/form-data")]
     [ProducesResponseType<ApiResponse<CertificateAdminResponse>>(StatusCodes.Status201Created)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status413PayloadTooLarge)]
     public async Task<ActionResult<ApiResponse<CertificateAdminResponse>>> Post(
-        [FromBody] CertificateWriteRequest request,
+        [FromForm] CertificateCreateForm form,
         CancellationToken cancellationToken)
     {
-        var result = await certificateService.CreateCertificateAsync(request, cancellationToken);
+        CertificateWriteRequest request;
+        try
+        {
+            request = JsonSerializer.Deserialize<CertificateWriteRequest>(
+                form.Payload,
+                WebJsonOptions) ?? throw InvalidPayload();
+        }
+        catch (JsonException)
+        {
+            throw InvalidPayload();
+        }
+
+        CertificateAdminResponse result;
+        if (form.File is null)
+        {
+            result = await certificateService.CreateCertificateAsync(request, cancellationToken);
+        }
+        else
+        {
+            await using var stream = form.File.OpenReadStream();
+            result = await certificateService.CreateCertificateWithEvidenceAsync(
+                request,
+                new CertificateEvidenceUpload(
+                    stream,
+                    form.File.FileName,
+                    form.File.ContentType,
+                    form.File.Length),
+                cancellationToken);
+        }
+
         return CreatedAtAction(
             nameof(GetById),
             new { id = result.Id },
             ApiResponse.Success(result, "Certificate created."));
     }
+
+    private static ValidationException InvalidPayload() =>
+        new(
+            "Certificate validation failed.",
+            new Dictionary<string, string[]> { ["payload"] = ["Payload must be valid JSON."] });
 
     [HttpPut("{id:guid}")]
     [ProducesResponseType<ApiResponse<CertificateAdminResponse>>(StatusCodes.Status200OK)]
@@ -105,4 +146,13 @@ public sealed class AdminCertificatesController(ICertificateService certificateS
             cancellationToken);
         return Ok(ApiResponse.Success(result, "Certificate evidence uploaded."));
     }
+}
+
+public sealed class CertificateCreateForm
+{
+    [FromForm(Name = "payload")]
+    public required string Payload { get; init; }
+
+    [FromForm(Name = "file")]
+    public IFormFile? File { get; init; }
 }

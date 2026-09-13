@@ -470,7 +470,7 @@ Public DTO derives `isCurrent` from `endDate == null` and includes only requeste
 
 Enums: `kind` is `personal|professional`; `disclosureLevel` is `full|limited`.
 
-Write DTO contains: normalized `slug` (1-220), `internalName` (1-200), kind, disclosure level, optional HTTPS repository/demo URLs, optional `thumbnailImageId`, optional start/end dates with end on/after start, `isFeatured`, non-negative `displayOrder`, `isPublished`, both Translations, unique technology IDs, localized ordered highlights, and image metadata. `thumbnailImageId` must identify an image belonging to the same Project; create requests use null until gallery images exist. The service stores the selected managed image URL in `thumbnail_url`.
+Write DTO contains: normalized `slug` (1-220), `internalName` (1-200), kind, disclosure level, optional HTTPS repository/demo URLs, optional `thumbnailImageId`, optional start/end dates with end on/after start, `isFeatured`, non-negative `displayOrder`, `isPublished`, both Translations, unique technology IDs, localized ordered highlights, and optional image metadata. `images: null` is treated as an empty gallery. `thumbnailImageId` must identify an image belonging to the same Project; create requests use null until gallery images exist. The service stores the selected managed image URL in `thumbnail_url`.
 
 Project Translation fields:
 
@@ -513,7 +513,7 @@ Project Translation fields:
 
 Gallery multipart parts:
 
-- `files`: one or more PNG/JPEG/WebP files within configured count and size limits.
+- `files`: one or more PNG/JPEG/WebP/passive-SVG files within configured count and size limits. SVG rejects DTD/entity declarations, scripts, event attributes, external references, and foreign namespaces.
 - `metadata`: JSON array with unique `fileIndex`, non-negative unique `displayOrder`, and `altText.en`/`altText.vi` each 1-500 characters.
 - Each zero-based `fileIndex` occurs exactly once and references an uploaded part.
 - Response contains public image DTOs, never object keys.
@@ -522,7 +522,15 @@ Publishing requires both Project names and both alt texts for every public galle
 
 ## 7. Certificates
 
-Write DTO:
+Certificate creation uses `multipart/form-data` so metadata and optional evidence
+can be handled in one request:
+
+- `payload`: required JSON string containing the write DTO below.
+- `file`: optional PDF/PNG/JPEG/WebP evidence file. When present, the API uploads
+  it before the database commit and compensates the uploaded object if persistence
+  fails.
+
+Write DTO (`payload`):
 
 ```json
 {
@@ -542,7 +550,9 @@ Write DTO:
 }
 ```
 
-Validation: issuer 1-200; issued date required; expiration on/after issue date; credential ID max 200; credential URL absolute HTTPS; localized name 1-200; technology IDs unique/existing; publishing requires both names. Public `isExpired` is computed from the current date and expiration date. Public `credentialId` is omitted unless `showCredentialId = true`.
+`technologyIds` is optional; omitted or `null` is treated as an empty list. When supplied, technology IDs must be unique and existing.
+
+Validation: issuer 1-200; issued date required; expiration on/after issue date; credential ID max 200; credential URL absolute HTTPS; localized name 1-200; publishing requires both names. Public `isExpired` is computed from the current date and expiration date. Public `credentialId` is omitted unless `showCredentialId = true`.
 
 `fileUrl` and `imageUrl` are read-only storage-derived fields. The evidence upload endpoint updates the appropriate field from the validated uploaded content type.
 
@@ -553,7 +563,7 @@ Validation: issuer 1-200; issued date required; expiration on/after issue date; 
 | GET | `/api/v1/portfolio/{slug}/certificates?locale=en` | 200 | Published; display order, issued date descending, id |
 | GET | `/api/v1/admin/certificates?page=1&pageSize=20&search=&isPublished=` | 200 | Search issuer/localized name |
 | GET | `/api/v1/admin/certificates/{id}` | 200 | Complete admin aggregate |
-| POST | `/api/v1/admin/certificates` | 201 | Create |
+| POST | `/api/v1/admin/certificates` | 201 | Multipart `payload` plus optional `file`; response includes the applicable signed `downloadUrl` or `imageUrl` |
 | PUT | `/api/v1/admin/certificates/{id}` | 200 | Full mutable update |
 | DELETE | `/api/v1/admin/certificates/{id}` | 204 | Post-commit private-object cleanup |
 | POST | `/api/v1/admin/certificates/{id}/file` | 200 | Multipart PDF/PNG/JPEG/WebP |

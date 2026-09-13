@@ -109,10 +109,7 @@ public static class DependencyInjection
             services.AddDbContext<PortfolioDbContext>((provider, options) =>
                 options.UseNpgsql(
                     provider.GetRequiredService<IOptions<DatabaseOptions>>()
-                        .Value.ConnectionString,
-                    // Supabase's pooler can misreport per-statement row counts for Npgsql
-                    // modification batches, which EF interprets as optimistic concurrency.
-                    npgsql => npgsql.MaxBatchSize(1)));
+                        .Value.ConnectionString));
 
             services.AddIdentityCore<ApplicationUser>(options =>
                 {

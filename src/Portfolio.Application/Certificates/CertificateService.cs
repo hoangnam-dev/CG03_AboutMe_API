@@ -71,6 +71,68 @@ public sealed partial class CertificateService(
         CertificateWriteRequest request, CancellationToken cancellationToken) =>
         SaveAsync(null, request, cancellationToken);
 
+    public async Task<CertificateAdminResponse> CreateCertificateWithEvidenceAsync(
+        CertificateWriteRequest request,
+        CertificateEvidenceUpload upload,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentNullException.ThrowIfNull(upload);
+        var technologyIds = request.TechnologyIds ?? [];
+        Validate(request, technologyIds);
+        if (!await repository.TechnologyIdsExistAsync(technologyIds, cancellationToken))
+            throw Invalid("technologyIds", "Every technology ID must exist.");
+
+        var certificate = new Certificate
+        {
+            Id = Guid.NewGuid(),
+            CreatedAt = timeProvider.GetUtcNow(),
+        };
+        ApplyRequest(certificate, request, technologyIds);
+
+        var validated = await FileValidation.ValidateAsync(
+            new FileUpload(upload.Content, upload.OriginalFileName, upload.ContentType, upload.Length),
+            FileValidationOptions.ImagesAndPdf(evidenceSettings.MaxFileSize),
+            cancellationToken);
+        var objectKey = $"certificates/{certificate.Id}/{Guid.NewGuid():N}{validated.Extension}";
+        var stored = await storage.UploadAsync(
+            new StorageUpload(
+                evidenceSettings.Bucket,
+                objectKey,
+                upload.Content,
+                validated.ContentType,
+                validated.Length),
+            cancellationToken);
+
+        if (validated.Kind == FileKind.Pdf)
+            certificate.FileUrl = stored.ObjectKey;
+        else
+            certificate.ImageUrl = stored.ObjectKey;
+
+        try
+        {
+            await repository.AddAsync(certificate, cancellationToken);
+            await repository.SaveChangesAsync(cancellationToken);
+        }
+        catch
+        {
+            try
+            {
+                await storage.DeleteIfExistsAsync(
+                    stored.Bucket, stored.ObjectKey, CancellationToken.None);
+            }
+            catch (Exception cleanupException)
+            {
+                LogCompensationFailure(logger, stored.Bucket, stored.ObjectKey, cleanupException);
+            }
+            throw;
+        }
+
+        LogSaved(logger, certificate.Id, "created");
+        LogEvidenceUploaded(logger, certificate.Id, validated.Kind);
+        return await MapAdminAsync(certificate, cancellationToken);
+    }
+
     public Task<CertificateAdminResponse> UpdateCertificateAsync(
         Guid id, CertificateWriteRequest request, CancellationToken cancellationToken) =>
         SaveAsync(id, request, cancellationToken);
@@ -157,14 +219,27 @@ public sealed partial class CertificateService(
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(request);
-        Validate(request);
-        if (!await repository.TechnologyIdsExistAsync(request.TechnologyIds, cancellationToken))
+        var technologyIds = request.TechnologyIds ?? [];
+        Validate(request, technologyIds);
+        if (!await repository.TechnologyIdsExistAsync(technologyIds, cancellationToken))
             throw Invalid("technologyIds", "Every technology ID must exist.");
 
         var certificate = id.HasValue
             ? await repository.GetAsync(id.Value, true, cancellationToken)
                 ?? throw new NotFoundException("Certificate was not found.")
             : new Certificate { Id = Guid.NewGuid(), CreatedAt = timeProvider.GetUtcNow() };
+        ApplyRequest(certificate, request, technologyIds);
+        if (!id.HasValue) await repository.AddAsync(certificate, cancellationToken);
+        await repository.SaveChangesAsync(cancellationToken);
+        LogSaved(logger, certificate.Id, id.HasValue ? "updated" : "created");
+        return await MapAdminAsync(certificate, cancellationToken);
+    }
+
+    private void ApplyRequest(
+        Certificate certificate,
+        CertificateWriteRequest request,
+        IReadOnlyList<Guid> technologyIds)
+    {
         certificate.Issuer = request.Issuer.Trim();
         certificate.IssuedDate = request.IssuedDate;
         certificate.ExpirationDate = request.ExpirationDate;
@@ -175,14 +250,12 @@ public sealed partial class CertificateService(
         certificate.IsPublished = request.IsPublished;
         certificate.UpdatedAt = timeProvider.GetUtcNow();
         ReplaceTranslations(certificate, request.Translations);
-        ReplaceTechnologies(certificate, request.TechnologyIds);
-        if (!id.HasValue) await repository.AddAsync(certificate, cancellationToken);
-        await repository.SaveChangesAsync(cancellationToken);
-        LogSaved(logger, certificate.Id, id.HasValue ? "updated" : "created");
-        return await MapAdminAsync(certificate, cancellationToken);
+        ReplaceTechnologies(certificate, technologyIds);
     }
 
-    private static void Validate(CertificateWriteRequest request)
+    private static void Validate(
+        CertificateWriteRequest request,
+        IReadOnlyList<Guid> technologyIds)
     {
         if (string.IsNullOrWhiteSpace(request.Issuer) || request.Issuer.Trim().Length > 200)
             throw Invalid("issuer", "Issuer is required and must not exceed 200 characters.");
@@ -197,8 +270,6 @@ public sealed partial class CertificateService(
             throw Invalid("displayOrder", "Display order must be non-negative.");
         if (request.Translations is null)
             throw Invalid("translations", "Translations are required.");
-        if (request.TechnologyIds is null)
-            throw Invalid("technologyIds", "Technology IDs are required.");
         if (request.Translations.Keys.Any(locale => !SupportedLocales.All.Contains(locale)))
             throw Invalid("translations", "Only 'en' and 'vi' translations are supported.");
         foreach (var pair in request.Translations)
@@ -206,7 +277,7 @@ public sealed partial class CertificateService(
                 throw Invalid($"translations.{pair.Key}.name", "Name is required and must not exceed 200 characters.");
         if (request.IsPublished)
             PublishTranslationValidation.EnsureComplete(request.Translations.Keys);
-        if (request.TechnologyIds.Distinct().Count() != request.TechnologyIds.Count)
+        if (technologyIds.Distinct().Count() != technologyIds.Count)
             throw Invalid("technologyIds", "Technology IDs must be unique.");
     }
 

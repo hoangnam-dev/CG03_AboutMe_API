@@ -101,6 +101,36 @@ public sealed class ProjectServiceTests
     }
 
     [Fact]
+    public async Task UploadGalleryRejectsActiveSvgBeforeStorage()
+    {
+        var project = Entity();
+        var storage = new RecordingStorage();
+        var service = CreateService(new ProjectRepositoryStub { Existing = project }, storage);
+        var bytes = "<svg xmlns=\"http://www.w3.org/2000/svg\"><script>alert(1)</script></svg>"u8.ToArray();
+
+        await Assert.ThrowsAsync<ValidationException>(() => service.UploadGalleryAsync(
+            project.Id,
+            [new ProjectGalleryUpload(0, new MemoryStream(bytes), "active.svg", "image/svg+xml", bytes.Length)],
+            [Metadata(0, 0)],
+            TestContext.Current.CancellationToken));
+
+        Assert.Empty(storage.Events);
+    }
+
+    [Fact]
+    public async Task CreateTreatsNullImagesAsNoGalleryImages()
+    {
+        var repository = new ProjectRepositoryStub();
+        var service = CreateService(repository);
+
+        var result = await service.CreateProjectAsync(
+            Request("without-gallery") with { Images = null! },
+            TestContext.Current.CancellationToken);
+
+        Assert.Empty(result.Images);
+    }
+
+    [Fact]
     public async Task ReorderRejectsDuplicateIds()
     {
         var id = Guid.NewGuid();

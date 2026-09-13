@@ -9,7 +9,7 @@ public static partial class SvgValidation
     private const string SvgNamespace = "http://www.w3.org/2000/svg";
     private static readonly HashSet<string> AllowedElements = new(StringComparer.Ordinal)
     {
-        "svg", "g", "path", "circle", "ellipse", "rect", "line", "polyline", "polygon",
+        "svg", "g", "path", "circle", "ellipse", "rect", "line", "polyline", "polygon", "text",
         "title", "desc", "defs", "linearGradient", "radialGradient", "stop", "clipPath",
     };
     private static readonly HashSet<string> AllowedAttributes = new(StringComparer.Ordinal)
@@ -20,7 +20,7 @@ public static partial class SvgValidation
         "stroke-dasharray", "stroke-dashoffset", "opacity", "fill-opacity", "stroke-opacity",
         "transform", "id", "offset", "stop-color", "stop-opacity", "gradientUnits",
         "gradientTransform", "fx", "fy", "fr", "clip-path", "clip-rule", "role", "aria-label",
-        "data-name",
+        "data-name", "aria-labelledby", "font-family", "font-size", "font-weight",
     };
 
     public static async Task EnsureSafeAsync(Stream content, CancellationToken cancellationToken)
@@ -56,13 +56,18 @@ public static partial class SvgValidation
                 while (reader.MoveToNextAttribute())
                 {
                     if (reader.Prefix == "xmlns" || reader.Name == "xmlns") continue;
-                    if (reader.NamespaceURI.Length > 0 ||
-                        reader.LocalName.StartsWith("on", StringComparison.OrdinalIgnoreCase) ||
-                        !AllowedAttributes.Contains(reader.LocalName) ||
-                        reader.Value.Contains("javascript:", StringComparison.OrdinalIgnoreCase) ||
-                        (reader.Value.Contains("url(", StringComparison.OrdinalIgnoreCase) &&
-                         !LocalUrlReference().IsMatch(reader.Value.Trim())))
-                        throw Invalid("SVG contains a disallowed or external attribute.");
+                    var attributeName = reader.LocalName;
+                    if (reader.NamespaceURI.Length > 0)
+                        throw Invalid($"SVG attribute '{attributeName}' uses a disallowed namespace.");
+                    if (attributeName.StartsWith("on", StringComparison.OrdinalIgnoreCase))
+                        throw Invalid($"SVG event attribute '{attributeName}' is not allowed.");
+                    if (!AllowedAttributes.Contains(attributeName))
+                        throw Invalid($"SVG attribute '{attributeName}' is not allowed.");
+                    if (reader.Value.Contains("javascript:", StringComparison.OrdinalIgnoreCase))
+                        throw Invalid($"SVG attribute '{attributeName}' contains an unsafe URI.");
+                    if (reader.Value.Contains("url(", StringComparison.OrdinalIgnoreCase) &&
+                        !LocalUrlReference().IsMatch(reader.Value.Trim()))
+                        throw Invalid($"SVG attribute '{attributeName}' contains an external reference.");
                 }
                 reader.MoveToElement();
             }

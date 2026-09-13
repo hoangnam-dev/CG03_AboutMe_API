@@ -4,6 +4,7 @@
 .vscode/
 TestResults/
 coverage/
+logs/
 *.user
 *.suo
 .env
