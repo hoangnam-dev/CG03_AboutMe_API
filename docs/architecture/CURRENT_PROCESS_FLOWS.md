@@ -1007,7 +1007,10 @@ sequenceDiagram
         Service-->>Admin: 404 Problem Details
     end
     loop Mọi file trước khi upload
-        Service->>Validator: Validate non-empty, size, PNG/JPEG/WebP extension, MIME và signature
+        Service->>Validator: Validate non-empty, size, PNG/JPEG/WebP/SVG extension, MIME và signature
+        opt SVG
+            Service->>Validator: Parse XML và reject active/external content
+        end
     end
     loop Mỗi validated file
         Service->>Service: Generate projects/{projectId}/{uuid}.{extension}

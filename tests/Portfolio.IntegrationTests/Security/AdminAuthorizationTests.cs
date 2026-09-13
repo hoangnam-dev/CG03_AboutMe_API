@@ -87,6 +87,7 @@ public sealed partial class AdminAuthorizationTests : IClassFixture<DatabaseOpti
     private static bool RequiresMultipart(AdminOperation operation) =>
         operation.Method == HttpMethod.Post &&
         (operation.Path == "/api/v1/admin/cv" ||
+         operation.Path == "/api/v1/admin/certificates" ||
          operation.Path.EndsWith("/avatar", StringComparison.Ordinal) ||
          operation.Path.EndsWith("/hero-image", StringComparison.Ordinal) ||
          operation.Path.EndsWith("/images", StringComparison.Ordinal) ||

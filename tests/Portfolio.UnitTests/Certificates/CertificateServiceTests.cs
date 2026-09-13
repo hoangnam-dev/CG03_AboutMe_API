@@ -24,6 +24,52 @@ public sealed class CertificateServiceTests
     }
 
     [Fact]
+    public async Task CreateWithEvidencePersistsUploadedKeyAndReturnsSignedUrl()
+    {
+        var events = new List<string>();
+        var repository = new RepositoryStub { Events = events };
+        var storage = new StorageStub { Events = events };
+        var service = CreateService(repository, storage);
+        await using var content = new MemoryStream("%PDF-test"u8.ToArray());
+
+        var result = await service.CreateCertificateWithEvidenceAsync(
+            Request(),
+            new CertificateEvidenceUpload(content, "proof.pdf", "application/pdf", content.Length),
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(["upload", "add", "save", "sign"], events);
+        Assert.NotNull(repository.Added);
+        Assert.StartsWith(
+            $"certificates/{repository.Added.Id}/",
+            repository.Added.FileUrl,
+            StringComparison.Ordinal);
+        Assert.Null(repository.Added.ImageUrl);
+        Assert.Equal("https://storage.example/signed", result.DownloadUrl?.AbsoluteUri);
+        Assert.Null(result.ImageUrl);
+    }
+
+    [Fact]
+    public async Task CreateWithEvidenceDeletesUploadedObjectWhenPersistenceFails()
+    {
+        var repository = new RepositoryStub
+        {
+            SaveException = new InvalidOperationException("db"),
+        };
+        var storage = new StorageStub();
+        var service = CreateService(repository, storage);
+        await using var content = new MemoryStream("%PDF-test"u8.ToArray());
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            service.CreateCertificateWithEvidenceAsync(
+                Request(),
+                new CertificateEvidenceUpload(content, "proof.pdf", "application/pdf", content.Length),
+                TestContext.Current.CancellationToken));
+
+        Assert.Single(storage.DeletedKeys);
+        Assert.Equal(repository.Added?.FileUrl, storage.DeletedKeys[0]);
+    }
+
+    [Fact]
     public async Task PublishingRequiresBothTranslations()
     {
         var service = CreateService(new RepositoryStub(), new StorageStub());
@@ -222,12 +268,18 @@ public sealed class CertificateServiceTests
         public IReadOnlyList<CertificatePublicProjection>? PublicItems { get; init; } = [];
         public Exception? SaveException { get; init; }
         public List<string>? Events { get; init; }
+        public Certificate? Added { get; private set; }
 
         public Task<IReadOnlyList<CertificatePublicProjection>?> GetPublicAsync(string slug, string locale, CancellationToken token) => Task.FromResult(PublicItems);
         public Task<CertificateEntityPage> GetCertificatesAsync(CertificateAdminQuery query, CancellationToken token) => Task.FromResult(new CertificateEntityPage([], 0, query.Page, query.PageSize));
         public Task<Certificate?> GetAsync(Guid id, bool tracked, CancellationToken token) => Task.FromResult(Existing?.Id == id ? Existing : null);
         public Task<bool> TechnologyIdsExistAsync(IReadOnlyCollection<Guid> ids, CancellationToken token) => Task.FromResult(TechnologiesExist);
-        public Task AddAsync(Certificate certificate, CancellationToken token) => Task.CompletedTask;
+        public Task AddAsync(Certificate certificate, CancellationToken token)
+        {
+            Added = certificate;
+            Events?.Add("add");
+            return Task.CompletedTask;
+        }
         public void Remove(Certificate certificate) { }
         public Task SaveChangesAsync(CancellationToken token)
         {

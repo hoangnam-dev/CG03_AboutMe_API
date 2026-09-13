@@ -215,7 +215,6 @@ public sealed partial class ExperienceService(
             {
                 target = new ExperienceHighlight
                 {
-                    Id = Guid.NewGuid(),
                     ExperienceId = experience.Id,
                     LocaleCode = item.Locale,
                     HighlightType = type,

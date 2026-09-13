@@ -158,6 +158,42 @@ public sealed class ProjectRepositoryTests(PostgreSqlFixture database)
         Assert.Equal("Updated", stored!.Images.Single().Translations.Single(item => item.LocaleCode == "en").AltText);
     }
 
+    [Fact]
+    public async Task UploadGalleryPersistsSafeSvgAndTranslationsForExistingProject()
+    {
+        await database.ResetApplicationDataAsync(TestContext.Current.CancellationToken);
+        await using var context = database.CreateDbContext();
+        var project = Project("svg-gallery", false, 0, false);
+        context.Projects.Add(project);
+        await context.SaveChangesAsync(TestContext.Current.CancellationToken);
+        context.ChangeTracker.Clear();
+        var repository = new ProjectRepository(context);
+        var service = new ProjectService(
+            repository,
+            new PublicUrlStorage(),
+            new ProjectImageSettings("project-images", 1024, 10),
+            TimeProvider.System,
+            NullLogger<ProjectService>.Instance);
+        var bytes = "<svg xmlns=\"http://www.w3.org/2000/svg\"><g data-name=\"Preview\"><path d=\"M1 1h2\"/></g></svg>"u8.ToArray();
+
+        var result = await service.UploadGalleryAsync(
+            project.Id,
+            [new ProjectGalleryUpload(0, new MemoryStream(bytes), "preview.svg", "image/svg+xml", bytes.Length)],
+            [new ProjectGalleryMetadata(
+                0,
+                0,
+                new Dictionary<string, string> { ["en"] = "Preview", ["vi"] = "Xem truoc" })],
+            TestContext.Current.CancellationToken);
+
+        var uploaded = Assert.Single(result);
+        context.ChangeTracker.Clear();
+        var stored = await repository.GetAsync(project.Id, false, TestContext.Current.CancellationToken);
+        var storedImage = Assert.Single(stored!.Images);
+        Assert.Equal(uploaded.Id, storedImage.Id);
+        Assert.EndsWith(".svg", storedImage.ImageUrl, StringComparison.Ordinal);
+        Assert.Equal(2, storedImage.Translations.Count);
+    }
+
     private static Profile Profile()
     {
         var profile = new Profile { Slug = "nam", FullName = "Nam" };
@@ -254,7 +290,8 @@ public sealed class ProjectRepositoryTests(PostgreSqlFixture database)
 
     private sealed class PublicUrlStorage : IFileStorage
     {
-        public Task<StorageObject> UploadAsync(StorageUpload upload, CancellationToken cancellationToken) => throw new NotSupportedException();
+        public Task<StorageObject> UploadAsync(StorageUpload upload, CancellationToken cancellationToken) =>
+            Task.FromResult(new StorageObject(upload.Bucket, upload.ObjectKey));
         public Task DeleteIfExistsAsync(string bucket, string objectKey, CancellationToken cancellationToken) => Task.CompletedTask;
         public Uri GetPublicReadUrl(string bucket, string objectKey) => new($"https://storage.example/{bucket}/{objectKey}");
         public Task<Uri> CreateSignedReadUrlAsync(string bucket, string objectKey, TimeSpan lifetime, CancellationToken cancellationToken) => throw new NotSupportedException();

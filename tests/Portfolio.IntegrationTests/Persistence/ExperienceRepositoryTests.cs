@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging.Abstractions;
 using Portfolio.Application.Common.Models;
 using Portfolio.Application.Experiences;
 using Portfolio.Infrastructure.Persistence.Repositories;
@@ -145,6 +146,56 @@ public sealed class ExperienceRepositoryTests(PostgreSqlFixture database)
         Assert.Equal(
             [second.Id, first.Id],
             stored.Technologies.OrderBy(item => item.DisplayOrder).Select(item => item.TechnologyId));
+    }
+
+    [Fact]
+    public async Task UpdateAddsResponsibilitiesAndAchievementsToExistingExperience()
+    {
+        await database.ResetApplicationDataAsync(TestContext.Current.CancellationToken);
+        await using var context = database.CreateDbContext();
+        var experience = Experience("Example", new DateOnly(2024, 1, 1), 0, true);
+        context.WorkExperiences.Add(experience);
+        await context.SaveChangesAsync(TestContext.Current.CancellationToken);
+        context.ChangeTracker.Clear();
+        var repository = new ExperienceRepository(context);
+        var service = new ExperienceService(
+            repository,
+            TimeProvider.System,
+            NullLogger<ExperienceService>.Instance);
+        var request = new ExperienceWriteRequest(
+            experience.CompanyName,
+            null,
+            null,
+            experience.StartDate,
+            null,
+            0,
+            true,
+            new Dictionary<string, ExperienceTranslationRequest>
+            {
+                ["en"] = new("Engineer", "Remote", "Built APIs"),
+                ["vi"] = new("Ky su", "Tu xa", "Xay dung API"),
+            },
+            [
+                new("en", "responsibility", "Maintained services", 0),
+                new("vi", "responsibility", "Bao tri dich vu", 0),
+                new("en", "achievement", "Improved reliability", 0),
+                new("vi", "achievement", "Cai thien do tin cay", 0),
+            ],
+            []);
+
+        await service.UpdateExperienceAsync(
+            experience.Id,
+            request,
+            TestContext.Current.CancellationToken);
+
+        context.ChangeTracker.Clear();
+        var stored = await repository.GetAsync(
+            experience.Id, false, TestContext.Current.CancellationToken);
+        Assert.Equal(4, stored!.Highlights.Count);
+        Assert.Equal(2, stored.Highlights.Count(item =>
+            item.HighlightType == ExperienceHighlightType.Responsibility));
+        Assert.Equal(2, stored.Highlights.Count(item =>
+            item.HighlightType == ExperienceHighlightType.Achievement));
     }
 
     [Fact]

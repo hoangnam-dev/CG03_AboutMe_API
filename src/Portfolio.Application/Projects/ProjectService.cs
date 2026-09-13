@@ -122,6 +122,8 @@ public sealed partial class ProjectService(
                 new FileUpload(file.Content, file.OriginalFileName, file.ContentType, file.Length),
                 FileValidationOptions.Images(imageSettings.MaxFileSize),
                 cancellationToken);
+            if (value.Kind == FileKind.Svg)
+                await SvgValidation.EnsureSafeAsync(file.Content, cancellationToken);
             validated.Add((file, metadata.Single(item => item.FileIndex == file.FileIndex), value));
         }
 
@@ -131,7 +133,6 @@ public sealed partial class ProjectService(
         {
             foreach (var item in validated.OrderBy(item => item.File.FileIndex))
             {
-                var imageId = Guid.NewGuid();
                 var objectKey = $"projects/{project.Id}/{Guid.NewGuid():N}{item.Validated.Extension}";
                 var stored = await storage.UploadAsync(
                     new StorageUpload(
@@ -144,7 +145,6 @@ public sealed partial class ProjectService(
                 uploaded.Add(stored);
                 var image = new ProjectImage
                 {
-                    Id = imageId,
                     ProjectId = project.Id,
                     ImageUrl = stored.ObjectKey,
                     DisplayOrder = item.Metadata.DisplayOrder,
@@ -154,7 +154,6 @@ public sealed partial class ProjectService(
                 foreach (var alt in item.Metadata.AltText)
                     image.Translations.Add(new ProjectImageTranslation
                     {
-                        ProjectImageId = imageId,
                         LocaleCode = alt.Key,
                         AltText = alt.Value.Trim(),
                     });
@@ -182,6 +181,7 @@ public sealed partial class ProjectService(
     {
         ArgumentNullException.ThrowIfNull(request);
         Validate(request);
+        var images = request.Images ?? [];
         var slug = SlugNormalizer.Normalize(request.Slug);
         if (await repository.SlugExistsAsync(slug, id, cancellationToken))
             throw new ConflictException("Project slug already exists.");
@@ -192,11 +192,11 @@ public sealed partial class ProjectService(
             ? await repository.GetAsync(id.Value, true, cancellationToken)
                 ?? throw new NotFoundException("Project was not found.")
             : new Project { Id = Guid.NewGuid(), CreatedAt = timeProvider.GetUtcNow() };
-        if (!id.HasValue && request.Images.Count != 0)
+        if (!id.HasValue && images.Count != 0)
             throw Invalid("images", "Gallery image metadata cannot be supplied before files are uploaded.");
-        ValidateImageMetadata(project, request.Images, request.ThumbnailImageId);
+        ValidateImageMetadata(project, images, request.ThumbnailImageId);
 
-        var removedKeys = ReplaceImageMetadata(project, request.Images);
+        var removedKeys = ReplaceImageMetadata(project, images);
         project.Slug = slug;
         project.InternalName = request.InternalName.Trim();
         project.Kind = request.Kind;
@@ -240,7 +240,6 @@ public sealed partial class ProjectService(
         ArgumentNullException.ThrowIfNull(request.Translations);
         ArgumentNullException.ThrowIfNull(request.TechnologyIds);
         ArgumentNullException.ThrowIfNull(request.Highlights);
-        ArgumentNullException.ThrowIfNull(request.Images);
         ValidateTranslations(request.Translations, request.IsPublished);
         ValidateHighlights(request.Highlights);
         if (request.TechnologyIds.Distinct().Count() != request.TechnologyIds.Count)
@@ -375,7 +374,6 @@ public sealed partial class ProjectService(
             {
                 target = new ProjectHighlight
                 {
-                    Id = Guid.NewGuid(),
                     ProjectId = project.Id,
                     LocaleCode = item.Locale,
                     DisplayOrder = item.DisplayOrder,

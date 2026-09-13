@@ -48,6 +48,8 @@ COPY --from=build \
      /app/publish \
      .
 
+RUN mkdir -p /app/logs && chown $APP_UID:$APP_UID /app/logs
+
 USER $APP_UID
 
 ENTRYPOINT ["dotnet", "Portfolio.Api.dll"]
