@@ -2,6 +2,8 @@
 
 Rollback means switching to a previously verified immutable image. It does not automatically reverse database schema or data.
 
+For the DigitalOcean container deployment, `scripts/deploy-production.sh` reserves `cg03aboutme-api` for the active release and `cg03aboutme-api-previous` for the immediate rollback release. A failed post-cutover health check automatically removes only the failed active container, restores the previous name, starts it, and requires local readiness. Do not remove `cg03aboutme-api-previous` during the observation window.
+
 ## Decision gate
 
 Before switching binaries, compare the failed release's migrations with the previous application version:

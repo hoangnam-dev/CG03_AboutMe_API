@@ -2,6 +2,14 @@
 
 Deploy an immutable image built from the reviewed commit. The release identifier is the full Git SHA; production must not depend on `latest` for rollback.
 
+## DigitalOcean automatic delivery
+
+For an ordinary push to `main`, `.github/workflows/backend-ci.yml` runs `verify`, `publish`, then `deploy`. The deploy job uses the GitHub Environment `production` and a dedicated forced-command SSH key to invoke `/opt/cg03aboutme-be/bin/deploy-production.sh`; application secrets remain in `/opt/cg03aboutme-be/shared/app.env` on the Droplet.
+
+The entrypoint pulls `ghcr.io/hoangnam-dev/cg03-aboutme-api:<full-git-sha>`, verifies a candidate on `127.0.0.1:8081`, switches the fixed production container on `127.0.0.1:8080`, and keeps the immediate previous container as `cg03aboutme-api-previous`. It automatically restores that container if post-cutover health verification fails.
+
+Automatic delivery fails closed when the push changes `src/Portfolio.Infrastructure/Persistence/Migrations/`. Follow `MIGRATIONS.md`, apply the reviewed migration with the dedicated migration credential, and perform the release under explicit operator control. The CD key, runtime container, and automatic workflow must never run `dotnet ef database update`.
+
 ## Pre-deploy
 
 1. Complete `RELEASE_CHECKLIST.md`; CI restore/build/test/format/image/smoke gates must be green.
