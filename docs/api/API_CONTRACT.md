@@ -303,7 +303,7 @@ Admin. Upserts the single Profile and returns 200.
 }
 ```
 
-Validation: normalized slug 1-220 lowercase kebab-case; full name 1-150; email valid/max 320 when present; phone max 30; title 1-200 for both locales; short bio max 500; location max 200; availability max 250; social platform 1-50 and unique; label max 100; URL absolute HTTPS; icon name max 100; order non-negative and unique. Setting a visibility flag true requires the corresponding value.
+Validation: normalized slug 1-220 lowercase kebab-case; full name 1-150; email valid/max 320 when present; phone max 30; title 1-200 for both locales; short bio max 500; location max 200; availability max 250; social platform 1-50 and unique; label max 100; URL must be absolute HTTP/HTTPS, a `www.`-prefixed web address, or a `mailto:` link with a valid email recipient. A `www.`-prefixed address is normalized by adding `https://` before persistence; icon name max 100; order non-negative and unique. Setting a visibility flag true requires the corresponding value.
 
 `avatarUrl` and `heroImageUrl` are read-only storage-derived fields. Changes use the dedicated upload endpoints below.
 

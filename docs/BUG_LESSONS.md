@@ -35,6 +35,8 @@ Its purpose is regression prevention, not incident narration.
 | BUG-2026-014 | Resolved | Docker / PostgreSQL | Shared | Supabase direct endpoint was unreachable from an IPv4-only Docker bridge | `docker`, `postgresql`, `supabase`, `ipv4`, `ipv6`, `session-pooler` |
 | BUG-2026-015 | Resolved | Storage / CI/CD | Shared | Root-relative signed URLs were parsed as file URIs on Linux | `uri`, `linux`, `supabase`, `signed-url` |
 | BUG-2026-016 | Resolved | API | Shared | Empty forwarded-header allowlist trusted every proxy | `aspnet-core`, `forwarded-headers`, `reverse-proxy`, `rate-limit`, `security` |
+| BUG-2026-020 | Resolved | Application | Profiles | Social-link validation rejected supported link representations | `validation`, `uri`, `social-links`, `mailto`, `http`, `scheme-normalization` |
+| BUG-2026-021 | Resolved | Application / EF Core | Profiles | New social link was tracked as an existing row | `ef-core`, `generated-key`, `change-tracking`, `concurrency`, `social-links` |
 
 ---
 
@@ -1105,6 +1107,71 @@ array.
 
 ---
 
+## BUG-2026-021 — New social link was tracked as an existing row
+
+- **Status:** Resolved
+- **Area:** Application | EF Core
+- **Feature:** Profiles
+- **First observed:** 2026-09-13
+- **Last updated:** 2026-09-13
+- **Tags:** `ef-core`, `generated-key`, `change-tracking`, `concurrency`, `social-links`
+
+### Symptom
+
+Updating an existing Profile with its first social link produced
+`DbUpdateConcurrencyException`. Direct insertion into PostgreSQL succeeded, and
+Profile updates without social links succeeded.
+
+### Root cause
+
+`ProfileService` assigned `Guid.NewGuid()` to a new `SocialLink` whose key is
+configured as database-generated. When that dependent was attached through an
+already tracked Profile navigation, EF Core classified it as `Modified` and
+issued `UPDATE social_links ... WHERE id = @id` instead of an INSERT. The new ID
+did not exist, so zero rows were affected.
+
+### Why it happened
+
+The service mixed client-generated key assignment with EF configuration that
+declares PostgreSQL as the key generator. Unit tests used a repository stub and
+therefore did not exercise EF Core entity-state inference.
+
+### Correct fix
+
+Leave a new `SocialLink.Id` at `Guid.Empty` and allow the configured
+`gen_random_uuid()` database default to generate it. EF Core then tracks the
+dependent as `Added` and issues an INSERT with the generated ID returned.
+
+### Prevention rule
+
+For dependents with database-generated keys, do not assign a non-default key
+before attaching them to an already tracked aggregate. Cover navigation-based
+dependent creation with an EF Core/PostgreSQL integration test.
+
+### Regression test
+
+`tests/Portfolio.IntegrationTests/Persistence/ProfileAboutRepositoryTests.cs` —
+`UpdateExistingProfileInsertsFirstSocialLink`.
+
+### Verification
+
+- The PostgreSQL regression test failed before the fix with the reported
+  `DbUpdateConcurrencyException` and passed after the key assignment was removed.
+- Release build passed with 0 warnings and 0 errors.
+- Full solution tests passed: 401 succeeded, 0 failed.
+
+### Relevant files
+
+- `src/Portfolio.Application/Profiles/ProfileService.cs`
+- `src/Portfolio.Infrastructure/Persistence/Configurations/ProfileConfigurations.cs`
+- `tests/Portfolio.IntegrationTests/Persistence/ProfileAboutRepositoryTests.cs`
+
+### Related lessons
+
+- None
+
+---
+
 ## BUG-2026-019 — Certificate create ignored multipart evidence
 
 - **Status:** Resolved
@@ -1176,3 +1243,74 @@ never assume an `IFormFile` part reaches a JSON `[FromBody]` action.
 ### Related lessons
 
 - BUG-2026-018
+
+---
+
+## BUG-2026-020 — Social-link validation rejected supported link representations
+
+- **Status:** Resolved
+- **Area:** Application
+- **Feature:** Profiles
+- **First observed:** 2026-09-13
+- **Last updated:** 2026-09-13
+- **Tags:** `validation`, `uri`, `social-links`, `mailto`, `http`, `scheme-normalization`
+
+### Symptom
+
+Updating a Profile with an HTTP LinkedIn URL, a `mailto:` email link, or a
+`www.`-prefixed web address such as `www.linkedin.com/in/example` threw a
+`ValidationException` from `ProfileService.Validate`.
+
+### Root cause
+
+The validator initially required every social-link URL to use HTTPS and its
+first expansion still required an absolute URI. Social links also represent
+email actions, existing HTTP web links, and scheme-less `www.` input from
+clients.
+
+### Why it happened
+
+The generic social-link field was validated as if it represented only secure
+web navigation. Its contract did not model the different safe schemes needed
+by the supported platform types.
+
+### Correct fix
+
+Accept absolute HTTP and HTTPS URLs with a non-empty host. Accept `mailto:` only
+when its recipient is one valid email address. Normalize `www.`-prefixed input
+by adding `https://` before validation and persistence. Continue rejecting
+malformed values and all other schemes.
+
+### Prevention rule
+
+Validate polymorphic link fields against an explicit scheme allowlist and apply
+scheme-specific structure checks. Normalize accepted scheme-less forms to a
+canonical absolute URL before persistence.
+
+### Regression test
+
+`tests/Portfolio.UnitTests/Profiles/ProfileServiceTests.cs` —
+`UpdateAcceptsSupportedSocialLinkSchemes` and
+`UpdateAcceptsSchemeLessWebAddressAndAddsHttpsScheme` and
+`UpdateRejectsInvalidOrUnsupportedSocialLinkSchemes`.
+
+### Verification
+
+- The acceptance regression failed before the fix for both HTTP and `mailto:`
+  inputs and passed after the scheme-aware validator was added.
+- The scheme-less `www.` regression failed before normalization with
+  `ValidationException` and passed afterward.
+- Focused Profile tests passed: 10 succeeded, 0 failed.
+- Release build passed with 0 warnings and 0 errors.
+- Full solution tests passed: 402 succeeded, 0 failed.
+
+### Relevant files
+
+- `src/Portfolio.Application/Profiles/ProfileService.cs`
+- `tests/Portfolio.UnitTests/Profiles/ProfileServiceTests.cs`
+- `src/Portfolio.Api/OpenApi/RequestExampleOperationFilter.cs`
+- `docs/api/API_CONTRACT.md`
+
+### Related lessons
+
+- None

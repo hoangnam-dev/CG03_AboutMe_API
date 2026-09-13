@@ -77,6 +77,22 @@ public sealed class RequestExampleOperationFilter : IOperationFilter
                   "iconName": "github",
                   "displayOrder": 0,
                   "isPublished": true
+                },
+                {
+                  "platform": "email",
+                  "label": "Email",
+                  "url": "mailto:admin@example.com",
+                  "iconName": "mail",
+                  "displayOrder": 1,
+                  "isPublished": true
+                },
+                {
+                  "platform": "linkedin",
+                  "label": "LinkedIn",
+                  "url": "www.linkedin.com/in/example",
+                  "iconName": "linkedin",
+                  "displayOrder": 2,
+                  "isPublished": true
                 }
               ]
             }

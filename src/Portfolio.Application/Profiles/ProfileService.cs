@@ -117,12 +117,12 @@ public sealed partial class ProfileService(
                 current => string.Equals(current.Platform, platform, StringComparison.OrdinalIgnoreCase));
             if (target is null)
             {
-                target = new SocialLink { Id = Guid.NewGuid(), ProfileId = profile.Id };
+                target = new SocialLink { ProfileId = profile.Id };
                 profile.SocialLinks.Add(target);
             }
             target.Platform = platform;
             target.Label = NullIfWhiteSpace(link.Label);
-            target.Url = link.Url;
+            target.Url = NormalizeSupportedSocialLinkUrl(link.Url)!;
             target.IconName = NullIfWhiteSpace(link.IconName);
             target.DisplayOrder = link.DisplayOrder;
             target.IsPublished = link.IsPublished;
@@ -245,11 +245,38 @@ public sealed partial class ProfileService(
                 throw new ConflictException("Social-link platform values must be unique.");
             if (link.DisplayOrder < 0 || !orders.Add(link.DisplayOrder))
                 throw new ConflictException("Social-link display orders must be non-negative and unique.");
-            if (!Uri.TryCreate(link.Url, UriKind.Absolute, out var uri) || uri.Scheme != Uri.UriSchemeHttps)
-                throw Invalid("socialLinks.url", "Social-link URLs must be absolute HTTPS URLs.");
+            if (NormalizeSupportedSocialLinkUrl(link.Url) is null)
+                throw Invalid(
+                    "socialLinks.url",
+                    "Social-link URLs must be absolute HTTP/HTTPS URLs, www-prefixed web addresses, or valid mailto links.");
             EnsureMax(link.Label, 100, "socialLinks.label");
             EnsureMax(link.IconName, 100, "socialLinks.iconName");
         }
+    }
+
+    private static string? NormalizeSupportedSocialLinkUrl(string value)
+    {
+        var candidate = value.Trim();
+        if (candidate.StartsWith("www.", StringComparison.OrdinalIgnoreCase))
+        {
+            candidate = $"https://{candidate}";
+        }
+
+        if (!Uri.TryCreate(candidate, UriKind.Absolute, out var uri)) return null;
+
+        if (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps)
+            return string.IsNullOrWhiteSpace(uri.Host) ? null : candidate;
+
+        if (uri.Scheme != Uri.UriSchemeMailto) return null;
+
+        var recipientPart = candidate["mailto:".Length..];
+        var optionsStart = recipientPart.IndexOfAny(['?', '#']);
+        var recipient = Uri.UnescapeDataString(
+            optionsStart >= 0 ? recipientPart[..optionsStart] : recipientPart);
+        return MailAddress.TryCreate(recipient, out var address) &&
+               string.Equals(address.Address, recipient, StringComparison.OrdinalIgnoreCase)
+            ? candidate
+            : null;
     }
 
     private static void EnsureMax(string? value, int maximum, string field)

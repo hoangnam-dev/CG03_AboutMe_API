@@ -64,6 +64,64 @@ public sealed class ProfileServiceTests
             request, TestContext.Current.CancellationToken));
     }
 
+    [Theory]
+    [InlineData("http://www.linkedin.com/in/example")]
+    [InlineData("mailto:admin@example.com")]
+    public async Task UpdateAcceptsSupportedSocialLinkSchemes(string url)
+    {
+        var service = CreateService(new ProfileRepositoryStub());
+        var request = ValidRequest("nam") with
+        {
+            SocialLinks = [new("contact", "Contact", url, "link", 0, true)],
+        };
+
+        var result = await service.UpdateAsync(request, TestContext.Current.CancellationToken);
+
+        Assert.Equal(url, Assert.Single(result.SocialLinks).Url);
+    }
+
+    [Fact]
+    public async Task UpdateAcceptsSchemeLessWebAddressAndAddsHttpsScheme()
+    {
+        var service = CreateService(new ProfileRepositoryStub());
+        var request = ValidRequest("nam") with
+        {
+            SocialLinks =
+            [
+                new(
+                    "linkedin",
+                    "LinkedIn",
+                    "www.linkedin.com/in/hoangnam14",
+                    "linkedin",
+                    2,
+                    true),
+            ],
+        };
+
+        var result = await service.UpdateAsync(request, TestContext.Current.CancellationToken);
+
+        Assert.Equal(
+            "https://www.linkedin.com/in/hoangnam14",
+            Assert.Single(result.SocialLinks).Url);
+    }
+
+    [Theory]
+    [InlineData("mailto:not-an-email")]
+    [InlineData("ftp://example.com/profile")]
+    public async Task UpdateRejectsInvalidOrUnsupportedSocialLinkSchemes(string url)
+    {
+        var service = CreateService(new ProfileRepositoryStub());
+        var request = ValidRequest("nam") with
+        {
+            SocialLinks = [new("contact", "Contact", url, "link", 0, true)],
+        };
+
+        var error = await Assert.ThrowsAsync<ValidationException>(() => service.UpdateAsync(
+            request, TestContext.Current.CancellationToken));
+
+        Assert.Contains("socialLinks.url", error.Errors.Keys);
+    }
+
     [Fact]
     public async Task ReplaceAvatarCompensatesOnPersistenceFailure()
     {
