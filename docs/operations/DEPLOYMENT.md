@@ -1,5 +1,7 @@
 # Deployment Runbook
 
+For the complete DigitalOcean bootstrap and automated GitHub Actions delivery procedure, including the commands used on Windows and Ubuntu, read [DIGITALOCEAN_CICD_RUNBOOK.md](DIGITALOCEAN_CICD_RUNBOOK.md).
+
 Deploy an immutable image built from the reviewed commit. The release identifier is the full Git SHA; production must not depend on `latest` for rollback.
 
 ## DigitalOcean automatic delivery
