@@ -1,5 +1,7 @@
 # Hướng dẫn setup và triển khai Docker — CG03 AboutMe
 
+Quy trình production DigitalOcean/GitHub Actions đã vận hành thực tế, bao gồm bootstrap server, Cloudflare, SSH forced command và giải thích chi tiết workflow/script CD, nằm tại [DIGITALOCEAN_CICD_RUNBOOK.md](DIGITALOCEAN_CICD_RUNBOOK.md).
+
 Tài liệu dành cho member mới, đi từ build image lần đầu đến chạy API có database/Storage và chuẩn bị phát hành. Lệnh bên dưới dùng **PowerShell**, chạy từ repository root chứa `Portfolio.sln`. Phần production là quy trình thực hiện, không phải xác nhận dự án đã được deploy lên một hosting cụ thể.
 
 ## 1. Lộ trình đọc và kết quả cần đạt
