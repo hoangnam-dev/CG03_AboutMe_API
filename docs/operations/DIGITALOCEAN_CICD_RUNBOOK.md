@@ -6,21 +6,77 @@ Tài liệu này mô tả quy trình production đã triển khai cho CG03 About
 
 ## 1. Kiến trúc và nguyên tắc
 
-```text
-Pull request
-    -> GitHub Actions: verify
-Merge/push main
-    -> verify
-    -> publish image ghcr.io/...:<full-git-sha>
-    -> SSH bằng deployment key bị giới hạn command
-    -> candidate 127.0.0.1:8081
-    -> health gate
-    -> production 127.0.0.1:8080
-    -> Nginx :443
-    -> Cloudflare proxy
-    -> https://api.noveraxiv.com
-    -> frontend https://noveraxiv.vercel.app
+### 1.1. Mô hình CI/CD end-to-end: Local -> GitHub -> DigitalOcean
+
+```mermaid
+flowchart LR
+    subgraph Local[Máy local của developer]
+        A[Code trên feature branch] --> B[Local quality gate]
+        B --> C[Commit và push branch]
+    end
+
+    subgraph GitHub[GitHub]
+        C --> D[Pull request]
+        D --> E[Actions: verify]
+        E -->|Fail| A
+        E -->|Pass + review| F[Merge vào main]
+        F --> G[Push main: verify lại]
+        G --> H[Verified image artifact]
+        H --> I[Publish GHCR với full Git SHA]
+        I --> J{Có thay đổi EF migration?}
+        J -->|Có| K[Dừng auto deploy; chạy migration có kiểm soát]
+        J -->|Không| L[SSH forced command: deploy SHA]
+    end
+
+    subgraph Server[DigitalOcean Droplet]
+        L --> M[Pull image SHA từ GHCR]
+        M --> N[Candidate 127.0.0.1:8081]
+        N --> O{3 local health checks pass?}
+        O -->|Không| P[Xóa candidate; production cũ tiếp tục chạy]
+        O -->|Có| Q[Giữ production cũ thành previous]
+        Q --> R[Production mới 127.0.0.1:8080]
+        R --> S{Local + public readiness pass?}
+        S -->|Không| T[Tự phục hồi previous container]
+        S -->|Có| U[Ghi marker deployed-sha]
+        U --> V[Nginx :443]
+    end
+
+    V --> W[Cloudflare proxy]
+    W --> X[https://api.noveraxiv.com]
+    X --> Y[Frontend https://noveraxiv.vercel.app]
 ```
+
+Mô hình có ba vùng trách nhiệm và chỉ chuyển release sang vùng tiếp theo khi gate của vùng hiện tại đã đạt:
+
+| Vùng | Đầu vào | Xử lý/gate chính | Đầu ra |
+| --- | --- | --- | --- |
+| Local | Source code trên feature branch | Build, test, format và smoke-test container trước khi push | Commit có thể review, định danh bằng Git SHA |
+| GitHub Pull Request | Branch đã push | Job `verify`; không publish và không deploy | Bằng chứng code đủ điều kiện merge |
+| GitHub `main` | Merge/push vào `main` | Chạy lại `verify`, xuất đúng image đã test, publish GHCR bằng full SHA, kiểm tra migration | Immutable image `ghcr.io/hoangnam-dev/cg03-aboutme-api:<full-git-sha>` |
+| DigitalOcean | Full SHA được gửi qua SSH key CD | Pull image, chạy candidate, health gate, cutover và public readiness | Production mới hoặc tự quay lại container `previous` |
+| Edge/client | Container production healthy | Nginx terminate TLS origin, Cloudflare proxy, CORS | API public phục vụ frontend |
+
+### 1.2. Luồng thao tác từ máy local
+
+Developer làm việc trên branch riêng và chạy bộ kiểm tra tương đương job `verify` trước khi mở Pull Request:
+
+```powershell
+dotnet restore Portfolio.sln
+dotnet build Portfolio.sln --configuration Release --no-restore
+$env:DOCKER_API_VERSION = '1.43'
+dotnet test Portfolio.sln --configuration Release --no-build
+dotnet format Portfolio.sln --verify-no-changes --no-restore
+docker build --tag portfolio-api:local .
+./scripts/Test-Container.ps1 -Image portfolio-api:local
+```
+
+Sau khi các lệnh đạt, commit và push **feature branch**, rồi mở Pull Request vào `main`. Không push thẳng `main` để bỏ qua review/branch protection. GitHub Actions trên Pull Request chỉ chạy `verify`; các job `publish` và `deploy` chỉ chạy khi có sự kiện `push` vào `main`. Nút `workflow_dispatch` hiện chỉ dùng để chạy kiểm tra thủ công, không publish hoặc deploy vì workflow giới hạn hai job đó bằng `github.event_name == 'push'`.
+
+Khi Pull Request được merge, GitHub chạy lại toàn bộ `verify` trên đúng merge commit. Image được build và smoke-test ở job này được `docker save` thành artifact có thời hạn một ngày. Job `publish` tải artifact đó, không build lại, rồi gắn tag và push lên GHCR bằng full Git SHA. Nhờ vậy source commit, image đã kiểm tra, image trong registry và image trên server cùng dùng một định danh.
+
+Job `deploy` chỉ bắt đầu sau `publish`, chạy tuần tự trong GitHub Environment `production` và kiểm tra thư mục EF Core migrations giữa commit trước với release commit. Nếu migration thay đổi, pipeline dừng trước SSH; operator phải thực hiện quy trình trong [MIGRATIONS.md](MIGRATIONS.md). Nếu không có migration, job gửi duy nhất lệnh `deploy <full-git-sha>` qua CD key có forced command; key này không được mở shell tùy ý trên server.
+
+Trên Droplet, deploy script pull đúng SHA image, chạy candidate ở loopback `8081` và kiểm tra `/health`, `/health/ready`, `/health/supabase`. Chỉ khi cả ba đạt, script mới giữ container đang chạy thành `cg03aboutme-api-previous` và tạo production mới ở loopback `8080`. Nếu local hoặc public readiness sau cutover thất bại, error trap phục hồi container previous. Marker `deployed-sha` chỉ được ghi sau toàn bộ health gate thành công.
 
 Các nguyên tắc bắt buộc:
 
